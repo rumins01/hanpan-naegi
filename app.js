@@ -1,19 +1,32 @@
-// 화면과 조작. 규칙은 rope.js와 duel.js, 웹과 앱의 차이는 platform.js에 있습니다.
-import { createRun, step, jump, ropeShape, ROPE } from './rope.js';
+// 화면과 흐름. 게임 규칙은 games/, 대결 규칙은 duel.js, 웹과 앱의 차이는 platform.js에 있습니다.
+import { GAMES, byId } from './games/index.js';
 import {
   BETS, LIMIT, cleanName, cleanBet, newSeed, pairNames, encodeChallenge, readChallengeFromHash,
   decide, nextLives, recordKey, addRecord,
 } from './duel.js';
 import { loadJSON, saveJSON, vibrate, challengeUrl, shareText, onHidden } from './platform.js';
+import { Fx } from './core/fx.js';
+import { createAudio } from './core/audio.js';
+import { FONT, RED } from './core/draw.js';
 
-export const VERSION = '0.1.1';
+export const VERSION = '0.2.0';
 const KEY = 'hanpan.v1';
-const COLORS = { paper: '#f3eee4', ink: '#1c1a17', rule: '#d6cdbd', red: '#c23b2c', mute: '#7a7266' };
+const QA = new URLSearchParams(location.search);
 
 const store = loadJSON(KEY, {
-  best: 0, sound: true, handicap: true, names: ['나', '상대'], bet: BETS[0], myName: '', h2h: {},
+  best: {}, sound: true, handicap: true, names: ['나', '상대'], bet: BETS[0], myName: '', h2h: {},
 });
+if (typeof store.best === 'number') store.best = { rope: store.best }; // v0.1 기록 옮기기
 const persist = () => saveJSON(KEY, store);
+const bestOf = (g) => store.best[g.id] || 0;
+function recordBest(g, score) {
+  const before = bestOf(g);
+  if (score > before) { store.best = { ...store.best, [g.id]: score }; persist(); return true; }
+  return false;
+}
+
+const audio = createAudio(() => store.sound);
+const sfx = audio.sfx;
 
 // ---------- 작은 도구 ----------
 function h(tag, props = {}, ...kids) {
@@ -32,7 +45,9 @@ function h(tag, props = {}, ...kids) {
 }
 
 const view = document.getElementById('view');
+let cleanup = null;
 function show(el) {
+  if (cleanup) { const c = cleanup; cleanup = null; c(); }
   view.replaceChildren(el);
   window.scrollTo(0, 0);
 }
@@ -43,68 +58,29 @@ function josa(word, withFinal, withoutFinal) {
   return `${word}${withFinal}(${withoutFinal})`;
 }
 
-// ---------- 소리 ----------
-let actx = null;
-function audio() {
-  if (!store.sound) return null;
-  try {
-    actx ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === 'suspended') actx.resume();
-    return actx;
-  } catch {
-    return null;
-  }
-}
-function tone(freq, dur, type = 'square', gain = 0.05, slideTo) {
-  const ctx = audio();
-  if (!ctx) return;
-  const t = ctx.currentTime;
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = type;
-  o.frequency.setValueAtTime(freq, t);
-  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-  g.gain.setValueAtTime(gain, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(ctx.destination);
-  o.start(t);
-  o.stop(t + dur + 0.02);
-}
-const sfx = {
-  clear: () => tone(880, 0.05, 'square', 0.035),
-  jump: () => tone(300, 0.08, 'triangle', 0.05, 520),
-  hit: () => tone(150, 0.22, 'sawtooth', 0.06, 90),
-  over: () => { tone(440, 0.15, 'triangle', 0.06, 330); setTimeout(() => tone(330, 0.25, 'triangle', 0.06, 220), 160); },
-  win: () => { tone(523, 0.1, 'triangle', 0.06); setTimeout(() => tone(784, 0.2, 'triangle', 0.06), 110); },
-};
-
 function soundToggle(compact = false) {
   const label = () => (compact ? (store.sound ? '소리 켬' : '소리 끔') : (store.sound ? '소리 켜짐' : '소리 꺼짐'));
   const btn = h('button', { type: 'button', class: compact ? 'hud-btn' : 'link', 'aria-pressed': String(store.sound) }, label());
   btn.addEventListener('click', () => {
     store.sound = !store.sound;
     persist();
-    if (!store.sound) actx?.suspend?.();
+    if (!store.sound) audio.suspend();
     btn.textContent = label();
     btn.setAttribute('aria-pressed', String(store.sound));
   });
   return btn;
 }
 
-// ---------- 공용 조각 ----------
-const topbar = (onBack) => h('div', { class: 'topbar' }, h('button', { type: 'button', class: 'link', onclick: onBack }, '처음으로'));
+const topbar = (onBack, label = '처음으로') => h('div', { class: 'topbar' }, h('button', { type: 'button', class: 'link', onclick: onBack }, label));
 
 function betPicker(initial) {
   const labels = [...BETS, '직접 쓰기'];
   let chosen = BETS.includes(initial) ? initial : initial ? '직접 쓰기' : BETS[0];
-  const input = h('input', {
-    class: 'field', type: 'text', maxlength: LIMIT.bet, placeholder: '예: 이번 주 장보기', 'aria-label': '내기 직접 쓰기',
-  });
+  const input = h('input', { class: 'field', type: 'text', maxlength: LIMIT.bet, placeholder: '예: 이번 주 장보기', 'aria-label': '내기 직접 쓰기' });
   if (chosen === '직접 쓰기') input.value = initial;
   const custom = h('div', { class: 'custom-bet' }, input);
   const chips = labels.map((label) => h('button', {
-    type: 'button',
-    class: 'chip',
+    type: 'button', class: 'chip',
     onclick: () => { chosen = label; sync(); if (label === '직접 쓰기') input.focus(); },
   }, label));
   function sync() {
@@ -124,10 +100,10 @@ function nameField(label, value) {
   return { el: h('label', { class: 'lab' }, h('span', {}, label), input), input };
 }
 
-function scoreboard(names, scores, winner) {
+function scoreboard(g, names, scores, winner) {
   return h('div', { class: 'board' }, names.map((n, i) => h('div', { class: `row${winner === i ? ' win' : ''}` },
     h('span', { class: 'row-name' }, n),
-    h('span', { class: 'row-score' }, `${scores[i]}개`))));
+    h('span', { class: 'row-score' }, `${scores[i]}${g.unit}`))));
 }
 
 function penalty(loserName, bet) {
@@ -138,43 +114,141 @@ function penalty(loserName, bet) {
     h('p', { class: 'penalty-bet' }, bet));
 }
 
+// ---------- 캔버스 도우미: 썸네일과 봇 데모 ----------
+function sizeCanvas(canvas) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = canvas.clientWidth || 160;
+  const H = canvas.clientHeight || 160;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  return { W, H, dpr };
+}
+
+function warm(game, seed, seconds) {
+  const s = game.create(seed, 99);
+  for (let i = 0; i < seconds * 120; i++) {
+    const ev = game.bot(s);
+    if (ev) for (const e of [].concat(ev)) game.input(s, e);
+    game.step(s, 1 / 120);
+    s.events.length = 0;
+  }
+  return s;
+}
+
+// 썸네일: 휴대폰 크기(360x640)로 그린 뒤 게임이 정한 초점 주변을 정사각형으로 잘라 씁니다.
+function drawThumb(game, canvas) {
+  const { W, H, dpr } = sizeCanvas(canvas);
+  const VW = 360; const VH = 640; const k = 2;
+  const off = document.createElement('canvas');
+  off.width = VW * k; off.height = VH * k;
+  const octx = off.getContext('2d');
+  octx.setTransform(k, 0, 0, k, 0, 0);
+  const s = warm(game, 7, 4);
+  game.draw(octx, s, { W: VW, H: VH, dpr: k, fx: new Fx(), dt: 1, layout: null, thumb: true });
+  const side = VW;
+  const cy = Math.min(VH - side / 2, Math.max(side / 2, VH * (game.focus ?? 0.5)));
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(off, 0, (cy - side / 2) * k, side * k, side * k, 0, 0, W * dpr, H * dpr);
+}
+
+// 봇이 실제로 플레이하는 데모(소리 없음). 반환값은 정지 함수.
+function runDemo(game, canvas) {
+  const ctx = canvas.getContext('2d');
+  let dims = sizeCanvas(canvas);
+  let s = game.create(newSeed(), 99);
+  const v = { W: dims.W, H: dims.H, fx: new Fx(), dt: 0, layout: null };
+  let raf = 0; let last = performance.now(); let acc = 0; let alive = true;
+  const frame = (now) => {
+    if (!alive) return;
+    raf = requestAnimationFrame(frame);
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    acc += dt;
+    while (acc >= 1 / 240) {
+      const ev = game.bot(s);
+      if (ev) for (const e of [].concat(ev)) game.input(s, e);
+      game.step(s, 1 / 240);
+      acc -= 1 / 240;
+    }
+    for (const ev of s.events) game.onEvent?.(ev, s, v);
+    s.events.length = 0;
+    v.fx.update(dt);
+    v.dt = dt;
+    if (s.over || s.score >= 14) { s = game.create(newSeed(), 99); v.cam = null; v.camX = null; v.camY = null; }
+    ctx.setTransform(dims.dpr, 0, 0, dims.dpr, 0, 0);
+    const [ox, oy] = v.fx.offset();
+    ctx.save();
+    ctx.translate(ox, oy);
+    game.draw(ctx, s, v);
+    v.fx.draw(ctx);
+    ctx.restore();
+    v.fx.drawOverlay(ctx, v.W, v.H, FONT);
+  };
+  const ro = new ResizeObserver(() => { dims = sizeCanvas(canvas); v.W = dims.W; v.H = dims.H; });
+  ro.observe(canvas);
+  raf = requestAnimationFrame(frame);
+  return () => { alive = false; cancelAnimationFrame(raf); ro.disconnect(); };
+}
+
 // ---------- 화면: 처음 ----------
 function home() {
+  const cards = GAMES.map((g) => {
+    const canvas = h('canvas', { class: 'thumb', 'aria-hidden': 'true' });
+    const best = bestOf(g);
+    const card = h('button', { type: 'button', class: 'card', onclick: () => gameMenu(g), 'aria-label': `${g.title}, ${g.control}${best ? `, 최고 ${best}${g.unit}` : ''}` },
+      canvas,
+      h('span', { class: 'card-body' },
+        h('span', { class: 'card-title' }, g.title),
+        h('span', { class: 'card-meta' }, g.control, best ? ` · 최고 ${best}${g.unit}` : '')));
+    return { card, canvas, g };
+  });
   show(h('section', { class: 'screen home' },
-    h('p', { class: 'kicker' }, '한판내기 · 첫 번째 게임'),
-    h('h1', {}, '줄넘기 내기'),
-    h('p', { class: 'lede' }, '줄이 갑자기 느려지고 빨라져요. 박자만 믿고 뛰면 걸립니다. 더 많이 넘은 사람이 이기고, 진 사람이 내기를 합니다.'),
+    h('p', { class: 'kicker' }, '한판내기'),
+    h('h1', {}, '둘이 한 판, 진 사람이 내기'),
+    h('p', { class: 'lede' }, '1분이면 끝나는 게임 6개. 둘이 폰 하나로 번갈아 하거나, 도전장 링크를 보내세요.'),
+    h('div', { class: 'grid' }, cards.map((c) => c.card)),
+    h('footer', { class: 'foot' }, h('span', {}, '같은 판으로 공정하게 겨뤄요'), soundToggle())));
+  requestAnimationFrame(() => cards.forEach((c) => drawThumb(c.g, c.canvas)));
+}
+
+// ---------- 화면: 게임 고르기 ----------
+function gameMenu(g) {
+  const demo = h('canvas', { class: 'demo', role: 'img', 'aria-label': `${g.title} 플레이 미리보기` });
+  const best = bestOf(g);
+  show(h('section', { class: 'screen' },
+    topbar(home, '게임 목록'),
+    h('p', { class: 'kicker' }, `${g.control} · ${g.ref} 방식`),
+    h('h2', { class: 'big' }, g.title),
+    demo,
+    h('p', { class: 'lede' }, g.rule),
     h('div', { class: 'stack' },
-      h('button', { type: 'button', class: 'btn primary', onclick: duoSetup }, '둘이 한 폰으로'),
-      h('button', { type: 'button', class: 'btn', onclick: () => linkSetup() }, '링크로 도전장 보내기'),
-      h('button', { type: 'button', class: 'btn ghost', onclick: practice }, '혼자 연습')),
-    h('footer', { class: 'foot' },
-      h('span', {}, store.best ? `내 최고 기록 ${store.best}개` : '아직 기록이 없어요'),
-      soundToggle())));
+      h('button', { type: 'button', class: 'btn primary', onclick: () => duoSetup(g) }, '둘이 한 폰으로'),
+      h('button', { type: 'button', class: 'btn', onclick: () => linkSetup(g) }, '링크로 도전장 보내기'),
+      h('button', { type: 'button', class: 'btn ghost', onclick: () => practice(g) }, best ? `혼자 연습 (최고 ${best}${g.unit})` : '혼자 연습'))));
+  requestAnimationFrame(() => { if (demo.isConnected) cleanup = runDemo(g, demo); });
 }
 
 // ---------- 화면: 둘이 한 폰으로 ----------
-function duoSetup() {
+function duoSetup(g) {
   const a = nameField('먼저 할 사람', store.names[0]);
   const b = nameField('다음 사람', store.names[1]);
   const bet = betPicker(store.bet);
   const hc = h('input', { type: 'checkbox' });
   hc.checked = store.handicap;
   show(h('section', { class: 'screen' },
-    topbar(home),
-    h('p', { class: 'kicker' }, '둘이 한 폰으로'),
+    topbar(() => gameMenu(g), g.title),
+    h('p', { class: 'kicker' }, `${g.title} · 둘이 한 폰으로`),
     h('h2', {}, '누가 할까요?'),
-    a.el, b.el,
-    bet.el,
+    a.el, b.el, bet.el,
     h('label', { class: 'check' }, hc, h('span', {}, '실력 차이 보정: 진 사람은 다음 판에 목숨 2개')),
     h('button', {
-      type: 'button',
-      class: 'btn primary',
+      type: 'button', class: 'btn primary',
       onclick: () => {
         const names = pairNames(a.input.value, b.input.value);
         Object.assign(store, { names, bet: bet.value(), handicap: hc.checked });
         persist();
-        startDuo({ names, bet: store.bet, handicap: hc.checked, lives: [1, 1], round: 1, first: 0 });
+        startDuo({ game: g, names, bet: store.bet, handicap: hc.checked, lives: [1, 1], round: 1, first: 0 });
       },
     }, '시작하기')));
 }
@@ -187,19 +261,19 @@ function startDuo(match) {
 }
 
 function handoff(match, turn) {
+  const g = match.game;
   const idx = match.order[turn];
   const name = match.names[idx];
   const prevIdx = match.order[0];
   show(h('section', { class: 'screen handoff' },
-    h('p', { class: 'kicker' }, `${match.round}판 · ${turn + 1}번째 차례`),
+    h('p', { class: 'kicker' }, `${g.title} · ${match.round}판 · ${turn + 1}번째 차례`),
     h('h2', { class: 'big' }, `${name} 차례`),
     h('p', { class: 'lede' }, `폰을 ${name}에게 건네주세요.`),
-    turn === 1 ? h('p', { class: 'note' }, `${match.names[prevIdx]} 기록 ${match.scores[prevIdx]}개. 이보다 많이 넘으면 이겨요.`) : null,
+    turn === 1 ? h('p', { class: 'note' }, `${match.names[prevIdx]} 기록 ${match.scores[prevIdx]}${g.unit}. 이보다 많으면 이겨요.`) : null,
     match.lives[idx] > 1 ? h('p', { class: 'note' }, '지난 판 보정으로 목숨 2개로 시작해요.') : null,
     h('button', {
-      type: 'button',
-      class: 'btn primary',
-      onclick: () => play({
+      type: 'button', class: 'btn primary',
+      onclick: () => play(g, {
         seed: match.seed,
         lives: match.lives[idx],
         target: turn === 1 ? match.scores[prevIdx] : null,
@@ -214,86 +288,89 @@ function handoff(match, turn) {
 }
 
 function duoResult(match) {
+  const g = match.game;
   const res = decide(match.scores);
-  store.h2h = addRecord(store.h2h, match.names, res);
-  store.best = Math.max(store.best, ...match.scores);
-  persist();
-  sfx.win();
+  if (!match.counted) {
+    match.counted = true;
+    store.h2h = addRecord(store.h2h, match.names, res);
+    persist();
+    match.scores.forEach((sc) => recordBest(g, sc));
+    sfx.win();
+  }
   const [A, B] = match.names;
   const rec = store.h2h[recordKey(A, B)];
   const lives = nextLives(res, match.handicap);
   show(h('section', { class: 'screen result' },
-    h('p', { class: 'kicker' }, `${match.round}판 결과`),
+    h('p', { class: 'kicker' }, `${g.title} · ${match.round}판 결과`),
     h('h2', { class: 'big' }, res.winner === null ? '무승부' : `${match.names[res.winner]} 승리`),
-    scoreboard(match.names, match.scores, res.winner),
+    scoreboard(g, match.names, match.scores, res.winner),
     penalty(res.loser === null ? null : match.names[res.loser], match.bet),
     h('p', { class: 'record' }, `전적  ${A} ${rec[A]} : ${rec[B]} ${B}`),
     res.loser !== null && match.handicap ? h('p', { class: 'note' }, `다음 판은 ${match.names[res.loser]} 목숨 2개로 시작해요.`) : null,
     h('div', { class: 'stack' },
-      h('button', {
-        type: 'button',
-        class: 'btn primary',
-        onclick: () => startDuo({ ...match, round: match.round + 1, lives, first: 1 - match.first }),
-      }, '한 판 더'),
-      h('button', { type: 'button', class: 'btn', onclick: duoSetup }, '사람·내기 바꾸기'),
+      h('button', { type: 'button', class: 'btn primary', onclick: () => startDuo({ ...match, counted: false, round: match.round + 1, lives, first: 1 - match.first }) }, '한 판 더'),
+      h('button', { type: 'button', class: 'btn', onclick: () => pickNext(match, lives) }, '다른 게임으로 한 판'),
       h('button', { type: 'button', class: 'btn ghost', onclick: home }, '처음으로'))));
 }
 
+// 같은 두 사람, 같은 내기로 게임만 바꿔 이어 갑니다(전적은 이어서 셉니다).
+function pickNext(match, lives) {
+  show(h('section', { class: 'screen' },
+    topbar(() => duoResult(match), '결과로'),
+    h('p', { class: 'kicker' }, `${match.names[0]} 대 ${match.names[1]} · ${match.bet}`),
+    h('h2', {}, '다음 게임은?'),
+    h('div', { class: 'list' }, GAMES.map((g) => h('button', {
+      type: 'button', class: `list-item${g.id === match.game.id ? ' current' : ''}`,
+      onclick: () => startDuo({ ...match, counted: false, game: g, round: match.round + 1, lives, first: 1 - match.first }),
+    }, h('strong', {}, g.title), h('span', {}, g.control))))));
+}
+
 // ---------- 화면: 링크 도전장 ----------
-function linkSetup(prefill = {}) {
+function linkSetup(g, prefill = {}) {
   const me = nameField('내 이름', store.myName);
   const bet = betPicker(prefill.bet || store.bet);
   show(h('section', { class: 'screen' },
-    topbar(home),
-    h('p', { class: 'kicker' }, '링크로 도전장'),
+    topbar(() => gameMenu(g), g.title),
+    h('p', { class: 'kicker' }, `${g.title} · 링크로 도전장`),
     h('h2', {}, '먼저 한 판 하고 기록을 보내요'),
-    h('p', { class: 'lede' }, '받은 사람은 똑같은 줄 속도로 도전해요.'),
-    me.el,
-    bet.el,
+    h('p', { class: 'lede' }, '받은 사람은 똑같은 판으로 도전해요.'),
+    me.el, bet.el,
     h('button', {
-      type: 'button',
-      class: 'btn primary',
+      type: 'button', class: 'btn primary',
       onclick: () => {
         const name = cleanName(me.input.value, '나');
         Object.assign(store, { myName: name, bet: bet.value() });
         persist();
-        recordForLink(name, store.bet);
+        recordForLink(g, name, store.bet);
       },
     }, '한 판 하기')));
 }
 
-function recordForLink(name, bet) {
+function recordForLink(g, name, bet) {
   const seed = newSeed();
-  play({ seed, lives: 1, label: name, onDone: (score) => linkReady({ seed, name, score, bet }) });
+  play(g, { seed, lives: 1, label: name, onDone: (score) => linkReady(g, { game: g.id, seed, name, score, bet }) });
 }
 
-function linkReady(ch) {
-  store.best = Math.max(store.best, ch.score);
-  persist();
+function linkReady(g, ch) {
+  const isBest = recordBest(g, ch.score);
   const url = challengeUrl(encodeChallenge(ch));
-  const msg = `${ch.name}의 줄넘기 기록 ${ch.score}개. 지는 사람이 ${ch.bet}. 이길 수 있어요?\n${url}`;
+  const msg = `[${g.title}] ${ch.name}의 기록 ${ch.score}${g.unit}. 지는 사람이 ${ch.bet}. 이길 수 있어요?\n${url}`;
   const status = h('p', { class: 'status', role: 'status' });
   show(h('section', { class: 'screen result' },
-    h('p', { class: 'kicker' }, '도전장 준비 완료'),
-    h('h2', { class: 'big' }, `${ch.score}개`),
+    h('p', { class: 'kicker' }, `${g.title} · 도전장 준비 완료`),
+    h('h2', { class: 'big' }, `${ch.score}${g.unit}`, isBest ? h('span', { class: 'newbest' }, '최고 기록') : null),
     h('p', { class: 'lede' }, '이 기록으로 도전장을 보낼까요?'),
     h('div', { class: 'preview', 'aria-label': '보낼 메시지' }, msg),
     h('div', { class: 'stack' },
       h('button', {
-        type: 'button',
-        class: 'btn primary',
+        type: 'button', class: 'btn primary',
         onclick: async () => {
           const r = await shareText(msg);
-          status.textContent = {
-            shared: '보냈어요.',
-            copied: '메시지를 복사했어요. 카톡에 붙여 넣으세요.',
-            failed: '복사하지 못했어요. 위 글을 길게 눌러 복사해 주세요.',
-            cancelled: '',
-          }[r];
+          status.textContent = { shared: '보냈어요.', copied: '메시지를 복사했어요. 카톡에 붙여 넣으세요.', failed: '복사하지 못했어요. 위 글을 길게 눌러 복사해 주세요.', cancelled: '' }[r];
         },
       }, '도전장 보내기'),
       status,
-      h('button', { type: 'button', class: 'btn', onclick: () => recordForLink(ch.name, ch.bet) }, '다시 해서 기록 올리기'),
+      h('button', { type: 'button', class: 'btn', onclick: () => recordForLink(g, ch.name, ch.bet) }, '다시 해서 기록 올리기'),
       h('button', { type: 'button', class: 'btn ghost', onclick: home }, '처음으로'))));
 }
 
@@ -303,49 +380,56 @@ function leaveChallenge() {
 }
 
 function challengeIntro(ch) {
+  const g = byId(ch.game);
+  if (!g) {
+    show(h('section', { class: 'screen' },
+      h('p', { class: 'kicker' }, '도전장'),
+      h('h2', {}, '이 게임은 아직 없어요'),
+      h('p', { class: 'lede' }, '도전장을 보낸 사람의 앱이 더 새 버전일 수 있어요. 새로고침해 보세요.'),
+      h('button', { type: 'button', class: 'btn primary', onclick: leaveChallenge }, '처음으로')));
+    return;
+  }
   const me = nameField('내 이름', store.myName);
+  const demo = h('canvas', { class: 'demo short', role: 'img', 'aria-label': `${g.title} 플레이 미리보기` });
   show(h('section', { class: 'screen' },
-    h('p', { class: 'kicker' }, '도전장 도착'),
-    h('h2', { class: 'big' }, `${ch.name}의 기록 ${ch.score}개`),
-    h('div', { class: 'penalty' },
-      h('span', { class: 'penalty-label' }, '지는 사람이'),
-      h('p', { class: 'penalty-bet' }, ch.bet)),
-    h('p', { class: 'lede' }, '같은 줄 속도로 한 판, 목숨은 1개예요.'),
+    h('p', { class: 'kicker' }, `도전장 도착 · ${g.title}`),
+    h('h2', { class: 'big' }, `${ch.name}의 기록 ${ch.score}${g.unit}`),
+    h('div', { class: 'penalty' }, h('span', { class: 'penalty-label' }, '지는 사람이'), h('p', { class: 'penalty-bet' }, ch.bet)),
+    demo,
+    h('p', { class: 'lede' }, `${g.rule} 같은 판으로 한 번, 목숨은 1개예요.`),
     me.el,
     h('div', { class: 'stack' },
       h('button', {
-        type: 'button',
-        class: 'btn primary',
+        type: 'button', class: 'btn primary',
         onclick: () => {
           const name = pairNames(ch.name, me.input.value)[1];
           store.myName = name;
           persist();
-          play({ seed: ch.seed, lives: 1, target: ch.score, label: name, onDone: (score) => challengeResult(ch, name, score) });
+          play(g, { seed: ch.seed, lives: 1, target: ch.score, label: name, onDone: (score) => challengeResult(g, ch, name, score) });
         },
       }, '도전하기'),
       h('button', { type: 'button', class: 'btn ghost', onclick: leaveChallenge }, '나중에 할게요'))));
+  requestAnimationFrame(() => { if (demo.isConnected) cleanup = runDemo(g, demo); });
 }
 
-function challengeResult(ch, me, score) {
+function challengeResult(g, ch, me, score) {
   const names = [me, ch.name];
   const scores = [score, ch.score];
   const res = decide(scores);
-  store.best = Math.max(store.best, score);
-  persist();
+  recordBest(g, score);
   if (res.winner === 0) sfx.win();
   const loser = res.loser === null ? null : names[res.loser];
-  const msg = `줄넘기 내기 결과: ${me} ${score}개, ${ch.name} ${ch.score}개. `
+  const msg = `[${g.title}] 내기 결과: ${me} ${score}${g.unit}, ${ch.name} ${ch.score}${g.unit}. `
     + (loser ? `${josa(loser, '이', '가')} ${ch.bet}!` : '무승부!');
   const status = h('p', { class: 'status', role: 'status' });
   show(h('section', { class: 'screen result' },
-    h('p', { class: 'kicker' }, '도전 결과'),
+    h('p', { class: 'kicker' }, `${g.title} · 도전 결과`),
     h('h2', { class: 'big' }, res.winner === 0 ? '이겼어요' : res.winner === 1 ? '졌어요' : '무승부'),
-    scoreboard(names, scores, res.winner),
+    scoreboard(g, names, scores, res.winner),
     penalty(loser, ch.bet),
     h('div', { class: 'stack' },
       h('button', {
-        type: 'button',
-        class: 'btn primary',
+        type: 'button', class: 'btn primary',
         onclick: async () => {
           const r = await shareText(msg);
           status.textContent = { shared: '보냈어요.', copied: '결과를 복사했어요.', failed: '복사하지 못했어요.', cancelled: '' }[r];
@@ -353,262 +437,229 @@ function challengeResult(ch, me, score) {
       }, '결과 알려주기'),
       status,
       h('button', {
-        type: 'button',
-        class: 'btn',
-        onclick: () => { history.replaceState(null, '', location.pathname + location.search); linkSetup({ bet: ch.bet }); },
+        type: 'button', class: 'btn',
+        onclick: () => { history.replaceState(null, '', location.pathname + location.search); linkSetup(g, { bet: ch.bet }); },
       }, '나도 도전장 보내기'),
       h('button', { type: 'button', class: 'btn ghost', onclick: leaveChallenge }, '처음으로'))));
 }
 
 // ---------- 화면: 혼자 연습 ----------
-function practice() {
-  const before = store.best;
-  play({
-    seed: newSeed(),
-    lives: 1,
-    label: '연습',
+function practice(g) {
+  play(g, {
+    seed: newSeed(), lives: 1, label: '연습',
     onDone: (score) => {
-      store.best = Math.max(store.best, score);
-      persist();
+      const isBest = recordBest(g, score) && score > 0;
+      if (isBest) sfx.win();
       show(h('section', { class: 'screen result' },
-        h('p', { class: 'kicker' }, '혼자 연습'),
-        h('h2', { class: 'big' }, `${score}개`),
-        h('p', { class: 'lede' }, score > before ? '최고 기록이에요.' : `최고 기록은 ${store.best}개예요.`),
+        h('p', { class: 'kicker' }, `${g.title} · 혼자 연습`),
+        h('h2', { class: 'big' }, `${score}${g.unit}`, isBest ? h('span', { class: 'newbest' }, '최고 기록') : null),
+        h('p', { class: 'lede' }, isBest ? '새 최고 기록이에요.' : `최고 기록은 ${bestOf(g)}${g.unit}예요.`),
         h('div', { class: 'stack' },
-          h('button', { type: 'button', class: 'btn primary', onclick: practice }, '다시 하기'),
-          h('button', { type: 'button', class: 'btn ghost', onclick: home }, '처음으로'))));
+          h('button', { type: 'button', class: 'btn primary', onclick: () => practice(g) }, '바로 다시'),
+          h('button', { type: 'button', class: 'btn', onclick: () => linkSetup(g) }, '이 게임으로 도전장 보내기'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: home }, '게임 목록'))));
     },
   });
 }
 
 // ---------- 화면: 게임 ----------
-function play({ seed, lives, target = null, label, onDone }) {
-  const run = createRun({ seed, lives });
-  if (new URLSearchParams(location.search).has('qa')) globalThis.__qaRun = run; // 검수용: ?qa 일 때만
-  const canvas = h('canvas', { class: 'stage-canvas', role: 'img', 'aria-label': '줄넘기 화면. 화면을 누르면 점프합니다.' });
-  const countEl = h('div', { class: 'count' }, '0');
-  const targetEl = target != null ? h('div', { class: 'target' }, `목표 ${target + 1}개`) : null;
+function play(game, { seed, lives, target = null, label, onDone }) {
+  const s = game.create(seed, lives);
+  if (QA.has('qa')) globalThis.__qa = { s, game }; // 검수용: ?qa 일 때만
+  const auto = QA.has('bot');
+  const canvas = h('canvas', { class: 'stage-canvas', role: 'img', 'aria-label': `${game.title} 화면` });
+  const scoreEl = h('div', { class: 'count' }, '0');
+  const targetEl = target != null ? h('div', { class: 'target' }, `목표 ${target + 1}${game.unit}`) : null;
   const livesEl = h('div', { class: 'lives' });
   const hintTitle = h('strong', {}, '화면을 누르면 시작');
-  const hintSub = h('span', {}, '줄이 발밑에 올 때 눌러서 점프');
-  const hint = h('div', { class: 'hint' }, hintTitle, hintSub);
+  const hintRule = h('span', {}, game.rule);
+  const hint = h('div', { class: 'hint' }, hintTitle, hintRule);
   const quit = h('button', { type: 'button', class: 'hud-btn' }, '그만');
   const stage = h('div', { class: 'stage' },
     canvas,
     h('div', { class: 'hud' },
       h('div', { class: 'hud-side' }, h('span', { class: 'who' }, label), livesEl),
-      h('div', { class: 'hud-center' }, countEl, targetEl),
+      h('div', { class: 'hud-center' }, scoreEl, targetEl),
       h('div', { class: 'hud-side right' }, soundToggle(true), quit)),
     hint);
   show(stage);
 
   const ctx = canvas.getContext('2d');
-  let W = 0; let H = 0; let dpr = 1;
+  const v = { W: 0, H: 0, dpr: 1, fx: new Fx(), dt: 0, layout: null, lastInputX: null, lastInputT: -9 };
   const resize = () => {
-    dpr = Math.min(window.devicePixelRatio || 1, 3);
-    W = canvas.clientWidth;
-    H = canvas.clientHeight;
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
+    v.dpr = Math.min(window.devicePixelRatio || 1, 3);
+    v.W = canvas.clientWidth;
+    v.H = canvas.clientHeight;
+    canvas.width = Math.round(v.W * v.dpr);
+    canvas.height = Math.round(v.H * v.dpr);
   };
   resize();
   const ro = new ResizeObserver(resize);
   ro.observe(canvas);
 
   let started = false; let paused = false; let ended = false; let done = false;
-  let raf = 0; let last = 0; let acc = 0; let countdown = 0;
-  const fx = { hit: 0, pulse: 0, passed: false };
-  const renderLives = () => { livesEl.textContent = `목숨 ${'●'.repeat(Math.max(run.lives, 0))}`; };
+  let raf = 0; let last = performance.now(); let acc = 0; let countdown = 0;
+  const pointers = new Map();
+  const renderLives = () => { livesEl.textContent = `목숨 ${'●'.repeat(Math.max(s.lives, 0))}`; };
   renderLives();
 
-  function press(e) {
-    if (e?.target?.closest?.('button')) return;
-    e?.preventDefault?.();
-    audio();
+  const begin = () => {
+    started = true; paused = false; countdown = 1.2;
+    hintTitle.textContent = '3';
+    hintRule.hidden = true;
+    hint.classList.add('counting');
+    hint.hidden = false;
+    last = performance.now();
+  };
+  const send = (type, x, y) => {
+    if (!started || paused || countdown > 0 || ended) return;
+    if (type === 'down') { v.lastInputX = x; v.lastInputT = s.t; }
+    game.input(s, { type, x, y });
+  };
+  const pos = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height];
+  };
+  function onDown(e) {
+    if (e.target?.closest?.('button')) return;
+    e.preventDefault();
+    audio.unlock();
     if (ended) return;
-    if (!started || paused) {
-      started = true;
-      paused = false;
-      countdown = 1.2; // 3, 2, 1 동안 줄은 머리 위에서 멈춰 있음
-      hintTitle.textContent = '3';
-      hintSub.hidden = true;
-      hint.classList.add('counting');
-      last = performance.now();
-      return;
-    }
-    if (countdown > 0) return;
-    jump(run);
+    if (!started || paused) { begin(); return; }
+    const [x, y] = pos(e);
+    pointers.set(e.pointerId, x);
+    try { stage.setPointerCapture(e.pointerId); } catch { /* 일부 브라우저 */ }
+    send('down', x, y);
   }
-  const onKey = (e) => { if (e.code === 'Space') press(e); };
-  stage.addEventListener('pointerdown', press);
+  function onUp(e) {
+    if (!pointers.has(e.pointerId)) return;
+    const x = pointers.get(e.pointerId);
+    pointers.delete(e.pointerId);
+    send('up', x, 0.5);
+  }
+  const keyX = { Space: 0.5, ArrowLeft: 0.2, ArrowRight: 0.8, ArrowUp: 0.8 };
+  const onKey = (e) => {
+    if (!(e.code in keyX) || e.repeat) return;
+    e.preventDefault();
+    audio.unlock();
+    if (e.type === 'keydown') {
+      if (!started || paused) { begin(); return; }
+      send('down', keyX[e.code], 0.5);
+    } else send('up', keyX[e.code], 0.5);
+  };
+  stage.addEventListener('pointerdown', onDown);
+  stage.addEventListener('pointerup', onUp);
+  stage.addEventListener('pointercancel', onUp);
   addEventListener('keydown', onKey);
+  addEventListener('keyup', onKey);
   const offHidden = onHidden(() => {
     if (started && !ended) {
       paused = true;
+      countdown = 0;
+      for (const id of [...pointers.keys()]) onUp({ pointerId: id });
       hintTitle.textContent = '화면을 누르면 계속';
-      hintSub.hidden = false;
+      hintRule.hidden = false;
       hint.classList.remove('counting');
       hint.hidden = false;
     }
-    actx?.suspend?.();
+    audio.suspend();
   });
   quit.addEventListener('click', () => finish());
 
-  function handleEvents() {
-    for (const ev of run.events) {
-      if (ev.type === 'clear') {
-        sfx.clear();
-        fx.pulse = 1;
-        countEl.textContent = String(ev.count);
-        if (target != null && !fx.passed && ev.count > target) {
-          fx.passed = true;
-          targetEl.textContent = '역전!';
-          targetEl.classList.add('passed');
-        }
-      } else if (ev.type === 'jump') sfx.jump();
-      else if (ev.type === 'hit') { sfx.hit(); vibrate(80); fx.hit = 0.45; renderLives(); }
-      else if (ev.type === 'over') sfx.over();
-    }
-    run.events.length = 0;
+  function common(ev) {
+    if (ev.type === 'score') {
+      if (!ev.quiet) { if (ev.perfect) { sfx.perfect(ev.combo); vibrate(12); } else sfx.tick(ev.combo); }
+      scoreEl.textContent = String(s.score);
+      scoreEl.classList.remove('pop'); void scoreEl.offsetWidth; scoreEl.classList.add('pop');
+      if (target != null && targetEl && !targetEl.classList.contains('passed') && s.score > target) {
+        targetEl.textContent = '역전!';
+        targetEl.classList.add('passed');
+        sfx.stage();
+        v.fx.text(v.W / 2, v.H * 0.3, '역전!', { color: RED, size: 34, life: 1 });
+      }
+    } else if (ev.type === 'fail') {
+      sfx.hit(); vibrate(70);
+      v.fx.shake(9, 0.3); v.fx.flash(RED, 0.18); v.fx.hitstop(90);
+      renderLives();
+      if (!s.over && s.lives > 0) v.fx.text(v.W / 2, v.H * 0.42, '목숨 1개 사용', { color: RED, size: 20, life: 0.9 });
+    } else if (ev.type === 'over') {
+      sfx.over();
+      ended = true;
+      setTimeout(finish, 1100);
+    } else if (ev.type === 'jump') sfx.jump();
+    else if (ev.type === 'whoosh') sfx.whoosh();
+    else if (ev.type === 'thud') sfx.thud();
+    else if (ev.type === 'stage') { sfx.stage(); v.fx.text(v.W / 2, v.H * 0.5, `${ev.stage + 1}단계`, { color: RED, size: 28, life: 1 }); }
   }
 
   const FIXED = 1 / 240;
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    if (started && !paused && !ended && countdown > 0) {
-      countdown -= Math.min((now - last) / 1000, 0.05);
-      last = now;
-      if (countdown <= 0) { hint.hidden = true; hint.classList.remove('counting'); acc = 0; }
-      else hintTitle.textContent = String(Math.ceil(countdown / 0.4));
-    } else if (started && !paused && !ended) {
-      const dt = Math.min((now - last) / 1000, 0.05);
-      last = now;
-      acc += dt;
-      while (acc >= FIXED) { step(run, FIXED); acc -= FIXED; }
-      handleEvents();
-      fx.hit = Math.max(0, fx.hit - dt);
-      fx.pulse = Math.max(0, fx.pulse - dt * 4);
-      if (run.over) { ended = true; setTimeout(finish, 900); }
-    } else {
-      last = now;
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    v.dt = dt;
+    v.fx.update(dt);
+    if (started && !paused && !ended) {
+      if (countdown > 0) {
+        countdown -= dt;
+        if (countdown <= 0) { hint.hidden = true; hint.classList.remove('counting'); acc = 0; }
+        else hintTitle.textContent = String(Math.ceil(countdown / 0.4));
+      } else if (v.fx.stop > 0) {
+        v.fx.stop -= dt;
+      } else {
+        acc += dt;
+        while (acc >= FIXED && !s.over) {
+          if (auto) { const ev = game.bot(s); if (ev) for (const e of [].concat(ev)) game.input(s, e); }
+          game.step(s, FIXED);
+          acc -= FIXED;
+        }
+      }
     }
-    countEl.style.transform = `scale(${1 + fx.pulse * 0.12})`;
-    draw();
+    for (const ev of s.events) { common(ev); game.onEvent?.(ev, s, v); }
+    s.events.length = 0;
+    ctx.setTransform(v.dpr, 0, 0, v.dpr, 0, 0);
+    const [ox, oy] = v.fx.offset();
+    ctx.save();
+    ctx.translate(ox, oy);
+    game.draw(ctx, s, v);
+    v.fx.draw(ctx);
+    ctx.restore();
+    v.fx.drawOverlay(ctx, v.W, v.H, FONT);
+    if (ended) {
+      ctx.fillStyle = 'rgba(243,238,228,0.55)';
+      ctx.fillRect(0, 0, v.W, v.H);
+      ctx.fillStyle = '#1c1a17';
+      ctx.font = `800 40px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${s.score}${game.unit}`, v.W / 2, v.H * 0.45);
+    }
   }
   raf = requestAnimationFrame(frame);
 
-  function finish() {
-    if (done) return;
-    done = true;
+  const stop = () => {
     cancelAnimationFrame(raf);
     ro.disconnect();
     removeEventListener('keydown', onKey);
+    removeEventListener('keyup', onKey);
     offHidden();
-    onDone(run.count);
+  };
+  function finish() {
+    if (done) return;
+    done = true;
+    stop();
+    cleanup = null;
+    onDone(s.score);
   }
-
-  function draw() {
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = COLORS.paper;
-    ctx.fillRect(0, 0, W, H);
-    const u = Math.min(W / 4.2, H / 3.6);
-    const gy = H * 0.7;
-    const cx = W / 2;
-    const X = (x) => cx + x * u;
-    const Y = (y) => gy - y * u;
-    ctx.save();
-    if (fx.hit > 0) ctx.translate((Math.random() - 0.5) * 12 * fx.hit, (Math.random() - 0.5) * 6 * fx.hit);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    // 땅
-    ctx.strokeStyle = COLORS.rule;
-    ctx.lineWidth = 1;
-    for (let x = -20; x < W + 20; x += 14) {
-      ctx.beginPath(); ctx.moveTo(x, Y(0) + 3); ctx.lineTo(x - 9, Y(0) + 13); ctx.stroke();
-    }
-    ctx.strokeStyle = COLORS.ink;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, Y(0)); ctx.lineTo(W, Y(0)); ctx.stroke();
-
-    const shape = ropeShape(run.phase);
-    const hand = (side) => ({
-      x: side * ROPE.handX + side * 0.05 * Math.sin(shape.angle),
-      y: ROPE.handY - 0.07 * Math.cos(shape.angle),
-    });
-    const L = hand(-1);
-    const R = hand(1);
-
-    const line = (pts, width, color) => {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = width;
-      ctx.beginPath();
-      pts.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
-      ctx.stroke();
-    };
-    const head = (x, y, r, width, color) => {
-      ctx.fillStyle = COLORS.paper;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = width;
-      ctx.beginPath(); ctx.arc(X(x), Y(y), r * u, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    };
-    const drawHolder = (side, hd) => {
-      const x = side * 1.78;
-      const w = u * 0.04;
-      line([[x - 0.12, 0], [x, 0.5], [x + 0.12, 0]], w, COLORS.mute);
-      line([[x, 0.5], [x, 1.02]], w, COLORS.mute);
-      line([[x, 0.92], [hd.x, hd.y]], w, COLORS.mute);
-      line([[x, 0.92], [x - side * 0.22, 0.6]], w, COLORS.mute);
-      head(x, 1.2, 0.15, w, COLORS.mute);
-    };
-    const drawRope = (front) => {
-      ctx.globalAlpha = front ? 1 : 0.45;
-      ctx.strokeStyle = COLORS.red;
-      ctx.lineWidth = u * (front ? 0.05 : 0.03);
-      ctx.beginPath();
-      ctx.moveTo(X(L.x), Y(L.y));
-      ctx.quadraticCurveTo(X(0), Y(2 * shape.mid - (L.y + R.y) / 2), X(R.x), Y(R.y));
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    };
-    const drawJumper = () => {
-      const y = run.y;
-      // 그림자
-      ctx.fillStyle = 'rgba(28,26,23,0.12)';
-      const sw = 0.32 * (1 - Math.min(y, 1) * 0.45);
-      ctx.beginPath(); ctx.ellipse(X(0), Y(0) + 2, sw * u, sw * u * 0.18, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.save();
-      const wob = fx.hit > 0 ? Math.sin(fx.hit * 40) * 0.25 : 0;
-      ctx.translate(X(0), Y(y));
-      ctx.rotate(wob);
-      ctx.translate(-X(0), -Y(y));
-      const c = fx.hit > 0 ? COLORS.red : COLORS.ink;
-      const w = u * 0.06;
-      const air = run.airborne;
-      const legs = air
-        ? [[[0, y + 0.5], [-0.16, y + 0.28], [-0.08, y + 0.1]], [[0, y + 0.5], [0.16, y + 0.28], [0.08, y + 0.1]]]
-        : [[[0, y + 0.5], [-0.14, y]], [[0, y + 0.5], [0.14, y]]];
-      legs.forEach((p) => line(p, w, c));
-      line([[0, y + 0.5], [0, y + 1.02]], w, c);
-      const hands = air ? [[-0.32, y + 1.12], [0.32, y + 1.12]] : [[-0.28, y + 0.62], [0.28, y + 0.62]];
-      hands.forEach((p) => line([[0, y + 0.92], p], w, c));
-      head(0, y + 1.2, 0.16, w, c);
-      ctx.restore();
-    };
-
-    drawHolder(-1, L);
-    drawHolder(1, R);
-    if (!shape.front) drawRope(false);
-    drawJumper();
-    if (shape.front) drawRope(true);
-    ctx.restore();
-  }
+  cleanup = () => { if (!done) { done = true; stop(); } };
+  if (auto) begin();
 }
 
 // ---------- 시작 ----------
 function boot() {
   const ch = readChallengeFromHash(location.hash);
   if (ch) challengeIntro(ch);
+  else if (QA.get('game') && byId(QA.get('game'))) gameMenu(byId(QA.get('game')));
   else home();
 }
 addEventListener('hashchange', boot);

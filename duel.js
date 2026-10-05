@@ -52,20 +52,25 @@ const fromB64url = (code) => {
 
 // 도전장 링크에 싣는 값. 서버 없이 링크만으로 같은 판을 재현합니다.
 // 점수는 받는 사람이 고칠 수 있지만, 연인끼리 내기라 첫 버전에서는 감수합니다.
-export function encodeChallenge({ seed, name, score, bet }) {
-  return toB64url(JSON.stringify({ v: 1, s: seed >>> 0, n: cleanName(name, '도전자'), c: score, b: cleanBet(bet) }));
+// v2부터 게임 id(g)를 싣습니다. v1 링크는 줄넘기(rope)로 읽습니다.
+export const GAME_ID = /^[a-z]{2,12}$/;
+
+export function encodeChallenge({ game = 'rope', seed, name, score, bet }) {
+  return toB64url(JSON.stringify({ v: 2, g: game, s: seed >>> 0, n: cleanName(name, '도전자'), c: score, b: cleanBet(bet) }));
 }
 
 export function decodeChallenge(code) {
   if (typeof code !== 'string' || code.length === 0 || code.length > 400) return null;
   try {
     const o = JSON.parse(fromB64url(code));
-    if (!o || o.v !== 1) return null;
+    if (!o || (o.v !== 1 && o.v !== 2)) return null;
+    const game = o.v === 1 ? 'rope' : o.g;
+    if (typeof game !== 'string' || !GAME_ID.test(game)) return null;
     const seed = Number(o.s);
     const score = Number(o.c);
     if (!Number.isInteger(seed) || seed <= 0 || seed > 0xffffffff) return null;
     if (!Number.isInteger(score) || score < 0 || score > LIMIT.score) return null;
-    return { seed, name: cleanName(o.n, '도전자'), score, bet: cleanBet(o.b) };
+    return { game, seed, name: cleanName(o.n, '도전자'), score, bet: cleanBet(o.b) };
   } catch {
     return null;
   }

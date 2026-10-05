@@ -184,7 +184,7 @@ h2.big { font-size: 34px; }
 .lives { color: var(--red); letter-spacing: 0.1em; }
 .hud-center { grid-column: 1 / -1; grid-row: 2; text-align: center; }
 .count {
-  font-size: 72px;
+  font-size: 64px;
   line-height: 1;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -228,3 +228,41 @@ h2.big { font-size: 34px; }
 @media (prefers-reduced-motion: reduce) {
   .count { transition: none; }
 }
+
+/* v0.2: 게임 6개 */
+.home h1 { font-size: 34px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+}
+.card:active { transform: translateY(1px); }
+.thumb { display: block; width: 100%; aspect-ratio: 1 / 1; border-bottom: 2px solid var(--ink); }
+.card-body { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px 12px; }
+.card-title { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.card-meta { font-size: 13px; color: var(--mute); font-weight: 600; }
+.demo { display: block; width: 100%; aspect-ratio: 4 / 5; max-height: 46vh; border: 2px solid var(--ink); border-radius: 6px; }
+.demo.short { aspect-ratio: 4 / 3; max-height: 30vh; }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.list-item {
+  display: flex; justify-content: space-between; align-items: center;
+  min-height: 56px; padding: 10px 16px;
+  border: 2px solid var(--ink); border-radius: 4px; background: transparent; cursor: pointer; font-size: 18px;
+}
+.list-item span { font-size: 14px; color: var(--mute); font-weight: 600; }
+.list-item.current { border-color: var(--red); }
+.newbest {
+  display: inline-block; margin-left: 10px; padding: 2px 8px; vertical-align: middle;
+  font-size: 14px; font-weight: 800; color: #fff; background: var(--red); border-radius: 3px; letter-spacing: 0;
+}
+.count.pop { animation: pop 160ms ease-out; }
+@keyframes pop { 0% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.hint span { max-width: 300px; white-space: normal; }
+@media (prefers-reduced-motion: reduce) { .count.pop { animation: none; } }
