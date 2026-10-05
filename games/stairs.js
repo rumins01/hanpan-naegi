@@ -33,6 +33,7 @@ export const drainAt = (score) => Math.min(RULES.drainMax, RULES.drain0 + score 
 function act(s, turn) {
   if (s.over) return;
   s.started = true;
+  s.prevFacing = s.facing;
   const facing = turn ? -s.facing : s.facing;
   extend(s, s.n + 64);
   if (facing === s.dirs[s.n]) {
@@ -67,6 +68,12 @@ function step(s, dt) {
     if (s.lives <= 0) { s.time = 0; s.over = true; s.events.push({ type: 'over' }); return; }
     s.time = RULES.refill;
   }
+}
+
+function revive(s) {
+  s.over = false; s.lives = 1; s.hitT = -1;
+  if (s.prevFacing != null) s.facing = s.prevFacing;
+  s.time = Math.max(s.time, RULES.refill);
 }
 
 // 초당 약 9칸을 정확하게 누르는 봇.
@@ -154,5 +161,5 @@ export default {
   accent: '#5f8f5a',
   focus: 0.5,
   unit: '칸',
-  create, input, step, draw, onEvent, bot,
+  create, input, step, draw, onEvent, bot, revive,
 };

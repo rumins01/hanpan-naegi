@@ -99,6 +99,11 @@ function bot(s) {
 
 const TH = theme(42);
 
+function revive(s) {
+  s.over = false; s.lives = 1; s.invuln = RULES.invuln + 0.5;
+  s.hold = 0; s.holdL = false; s.holdR = false; s.vx = 0;
+}
+
 function poop(ctx, x, y, r) {
   const layers = [[0, 0.5, 1, '#7d5236'], [0, 0.02, 0.74, '#8d5f40'], [0.04, -0.42, 0.47, '#9c6b49']];
   for (const [ox, oy, k, c] of layers) {
@@ -172,5 +177,5 @@ export default {
   accent: '#7b5133',
   focus: 0.7,
   unit: '개',
-  create, input, step, draw, onEvent, bot,
+  create, input, step, draw, onEvent, bot, revive,
 };

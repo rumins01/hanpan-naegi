@@ -2,23 +2,24 @@
 // 게임 규칙은 games/, 대결 규칙은 duel.js, 웹과 앱의 차이는 platform.js에 있습니다.
 import { GAMES, byId } from './games/index.js';
 import {
-  BETS, LIMIT, cleanName, cleanBet, newSeed, pairNames, encodeChallenge, readChallengeFromHash,
+  BETS, LIMIT, cleanName, cleanBet, newSeed, pairNames, encodeChallenge, decodeChallenge,
   decide, nextLives, recordKey, addRecord,
 } from './duel.js';
-import { loadJSON, saveJSON, vibrate, challengeUrl, shareText, onHidden } from './platform.js';
+import {
+  initPlatform, env, loadJSON, saveJSON, haptic, challengeLink, shareText, onHidden, onBack, closeApp, setSwipeBack,
+  challengeCode, clearChallengeCode, adsAvailable, preloadAd, adReady, showAd,
+} from './platform.js';
 import { Fx } from './core/fx.js';
 import { createAudio } from './core/audio.js';
 import { FONT, ACCENT as RED } from './core/draw.js';
 import { initAnalytics, track, isEnabled, setEnabled, sent } from './analytics.js';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 const KEY = 'hanpan.v1';
 const QA = new URLSearchParams(location.search);
 
-const store = loadJSON(KEY, {
-  best: {}, sound: true, handicap: true, names: ['나', '상대'], bet: BETS[0], myName: '', h2h: {},
-});
-if (typeof store.best === 'number') store.best = { rope: store.best }; // v0.1 기록 옮기기
+const DEFAULT_STORE = { best: {}, sound: true, handicap: true, names: ['나', '상대'], bet: BETS[0], myName: '', h2h: {} };
+let store = { ...DEFAULT_STORE }; // initPlatform() 뒤에 기기 저장소에서 다시 읽습니다
 const persist = () => saveJSON(KEY, store);
 const bestOf = (g) => store.best[g.id] || 0;
 function recordBest(g, score) {
@@ -27,7 +28,6 @@ function recordBest(g, score) {
 }
 
 const audio = createAudio(() => store.sound);
-initAnalytics({ version: VERSION });
 if (QA.has('qa')) globalThis.__events = sent;
 const betType = (bet) => (BETS.includes(bet) ? bet : 'custom'); // 직접 쓴 내기 문구는 보내지 않습니다
 const sfx = audio.sfx;
@@ -50,11 +50,48 @@ function h(tag, props = {}, ...kids) {
 
 const view = document.getElementById('view');
 let cleanup = null;
-function show(el) {
+let backAction = null; // 안드로이드 뒤로가기(토스)에서 실행할 동작. null이면 홈 = 종료 확인
+function show(el, back = () => home()) {
   if (cleanup) { const c = cleanup; cleanup = null; c(); }
+  backAction = back;
   view.replaceChildren(el);
   window.scrollTo(0, 0);
 }
+
+// 확인 창(TDS ConfirmDialog 문법). 반환: true(확인) / false(취소)
+let dialogOpen = null;
+function confirmDialog({ title, desc, ok = '확인', cancel = '취소' }) {
+  return new Promise((resolve) => {
+    const close = (v) => { wrap.remove(); dialogOpen = null; resolve(v); };
+    const wrap = h('div', { class: 'dialog-wrap', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      h('div', { class: 'dialog' },
+        h('h2', { class: 'dialog-title' }, title),
+        desc ? h('p', { class: 'dialog-desc' }, desc) : null,
+        h('div', { class: 'dialog-actions' },
+          h('button', { type: 'button', class: 'btn btn-weak btn-l', onclick: () => close(false) }, cancel),
+          h('button', { type: 'button', class: 'btn btn-primary btn-l', onclick: () => close(true) }, ok))));
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(false); });
+    dialogOpen = () => close(false);
+    document.body.append(wrap);
+  });
+}
+
+async function handleBack() {
+  if (dialogOpen) { dialogOpen(); return; }
+  if (backAction) { backAction(); return; }
+  const yes = await confirmDialog({ title: '한판내기를 종료할까요?', ok: '종료하기', cancel: '취소' });
+  if (yes) closeApp();
+}
+
+// 광고: 정해진 자리에서만, 준비됐을 때만 보여 주고, 준비 안 됐으면 그냥 넘어갑니다.
+async function interstitial(placement) {
+  if (!adsAvailable() || !adReady('interstitial')) return;
+  audio.suspend();
+  const r = await showAd('interstitial');
+  if (r.shown) track('ad_shown', { kind: 'interstitial', placement });
+}
+let practiceRuns = 0;
+const CONTINUE_MIN = 3; // 이 점수 미만에서는 이어하기 광고를 권하지 않습니다(0점에서 광고를 권하면 밀어붙이는 느낌)
 
 function josa(word, withFinal, withoutFinal) {
   const c = word.charCodeAt(word.length - 1);
@@ -330,7 +367,7 @@ function home() {
       listRow({ title: '효과음', control: soundToggle() }),
       listRow({ title: '이용 기록 보내기', sub: '게임을 고치는 데만 써요. 이름과 내기 내용은 보내지 않아요', control: switchEl(isEnabled(), (v) => { if (!v) track('setting_changed', { setting: 'analytics', value: false }); setEnabled(v); }, '이용 기록 보내기') }),
       listRow({ title: '해 본 게임', right: `${played} / ${GAMES.length}` })),
-    h('p', { class: 'footnote' }, '두 사람이 같은 판으로 겨뤄요. 점수와 전적은 이 기기에만 저장돼요.')));
+    h('p', { class: 'footnote' }, '두 사람이 같은 판으로 겨뤄요. 점수와 전적은 이 기기에만 저장돼요.')), null);
 }
 
 // ---------- 화면: 게임 고르기 ----------
@@ -346,7 +383,7 @@ function gameMenu(g) {
     h('div', { class: 'list' },
       listRow({ iconName: 'duo', tone: 'blue', title: '둘이 한 폰으로', sub: '번갈아 하고, 진 사람이 내기해요', chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'duo' }); duoSetup(g); } }),
       listRow({ iconName: 'send', tone: 'teal', title: '도전장 보내기', sub: '링크를 받은 사람이 같은 판으로 도전해요', chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'link' }); linkSetup(g); } }),
-      listRow({ iconName: 'target', tone: 'grey', title: '혼자 연습', sub: best ? `내 최고 기록 ${best}${g.unit}` : `${g.ref} 방식 · ${g.control}`, chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'practice' }); practice(g); } }))));
+      listRow({ iconName: 'target', tone: 'grey', title: '혼자 연습', sub: best ? `내 최고 기록 ${best}${g.unit}` : `${g.ref} 방식 · ${g.control}`, chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'practice' }); practice(g); } }))), home);
   requestAnimationFrame(() => { if (demo.isConnected) cleanup = runDemo(g, demo); });
 }
 
@@ -373,7 +410,7 @@ function duoSetup(g) {
     divider(),
     h('div', { class: 'list' },
       listRow({ title: '실력 차이 보정', sub: '진 사람은 다음 판에 목숨 2개', control: switchEl(handicap, (v) => { handicap = v; }, '실력 차이 보정') })),
-    bottomCTA({ label: '시작하기', onClick: start })));
+    bottomCTA({ label: '시작하기', onClick: start })), () => gameMenu(g));
 }
 
 function startDuo(match) {
@@ -439,7 +476,7 @@ function duoResult(match) {
       listRow({ title: '전적', right: `${A} ${rec[A]} : ${rec[B]} ${B}` }),
       res.loser !== null && match.handicap ? listRow({ title: '다음 판 보정', right: `${match.names[res.loser]} 목숨 2개` }) : null),
     bottomCTA(
-      { label: '한 판 더', onClick: () => { track('duo_next', { game: g.id, action: 'rematch', round: match.round }); startDuo({ ...match, counted: false, round: match.round + 1, lives, first: 1 - match.first }); } },
+      { label: '한 판 더', onClick: async () => { track('duo_next', { game: g.id, action: 'rematch', round: match.round }); if (match.round % 2 === 0) await interstitial('duo_rematch'); startDuo({ ...match, counted: false, round: match.round + 1, lives, first: 1 - match.first }); } },
       { label: '다른 게임', onClick: () => { track('duo_next', { game: g.id, action: 'other_game', round: match.round }); pickNext(match, lives); } })));
 }
 
@@ -448,7 +485,7 @@ function pickNext(match, lives) {
   show(page('',
     navBar(() => duoResult(match), '결과로'),
     titleBlock('다음 게임은?', `${match.names[0]} 대 ${match.names[1]} · ${match.bet}. 전적은 이어서 세요.`),
-    gameGrid((g) => { track('game_selected', { game: g.id, from: 'pick_next', prev_game: match.game.id }); startDuo({ ...match, counted: false, game: g, round: match.round + 1, lives, first: 1 - match.first }); }, { current: match.game.id })));
+    gameGrid(async (g) => { track('game_selected', { game: g.id, from: 'pick_next', prev_game: match.game.id }); if (match.round % 2 === 0) await interstitial('duo_next_game'); startDuo({ ...match, counted: false, game: g, round: match.round + 1, lives, first: 1 - match.first }); }, { current: match.game.id })), () => duoResult(match));
 }
 
 // ---------- 화면: 링크 도전장 ----------
@@ -468,7 +505,7 @@ function linkSetup(g, prefill = {}) {
     divider(),
     sectionHeader('지는 사람이'),
     bet.el,
-    bottomCTA({ label: '한 판 하기', onClick: go })));
+    bottomCTA({ label: '한 판 하기', onClick: go })), () => gameMenu(g));
 }
 
 function recordForLink(g, name, bet) {
@@ -482,9 +519,9 @@ async function shareAndToast(msg, texts, onResult) {
   toast(texts[r]);
 }
 
-function linkReady(g, ch) {
+async function linkReady(g, ch) {
   const isBest = recordBest(g, ch.score);
-  const url = challengeUrl(encodeChallenge(ch));
+  const url = await challengeLink(encodeChallenge(ch));
   const msg = `[${g.title}] ${ch.name}의 기록 ${ch.score}${g.unit}. 지는 사람이 ${ch.bet}. 이길 수 있어요?\n${url}`;
   track('challenge_created', { game: g.id, score: ch.score, challenge_id: String(ch.seed), bet_type: betType(ch.bet), new_best: isBest });
   show(page('has-cta',
@@ -496,8 +533,10 @@ function linkReady(g, ch) {
       { label: '다시 하기', onClick: () => { track('challenge_retry', { game: g.id, prev_score: ch.score }); recordForLink(g, ch.name, ch.bet); } })));
 }
 
+let challengeHandled = false; // 토스 딥링크(?d=)는 지울 수 없어서, 한 번 처리했으면 다시 열지 않습니다
 function leaveChallenge() {
-  history.replaceState(null, '', location.pathname + location.search);
+  challengeHandled = true;
+  clearChallengeCode();
   home();
 }
 
@@ -526,7 +565,7 @@ function challengeIntro(ch) {
     demo,
     h('div', { class: 'fields' }, me.el),
     h('div', { class: 'center' }, textButton('나중에 할게요', () => { track('challenge_declined', { game: g.id, challenge_id: String(ch.seed) }); leaveChallenge(); })),
-    bottomCTA({ label: '도전하기', onClick: go })));
+    bottomCTA({ label: '도전하기', onClick: go })), leaveChallenge);
   requestAnimationFrame(() => { if (demo.isConnected) cleanup = runDemo(g, demo); });
 }
 
@@ -547,14 +586,15 @@ function challengeResult(g, ch, me, score) {
     scoreList(g, names, scores, res.winner),
     divider(),
     h('div', { class: 'list' },
-      listRow({ iconName: 'send', tone: 'teal', title: '나도 도전장 보내기', sub: '이번엔 내가 먼저 해요', chevron: true, onClick: () => { track('challenge_reply', { game: g.id, challenge_id: String(ch.seed) }); history.replaceState(null, '', location.pathname + location.search); linkSetup(g, { bet: ch.bet }); } })),
-    bottomCTA({ label: '결과 알려주기', onClick: () => shareAndToast(msg, { shared: '보냈어요', copied: '결과를 복사했어요', failed: '복사하지 못했어요', cancelled: '' }, (r) => track('challenge_result_shared', { game: g.id, result: r, challenge_id: String(ch.seed) })) })));
+      listRow({ iconName: 'send', tone: 'teal', title: '나도 도전장 보내기', sub: '이번엔 내가 먼저 해요', chevron: true, onClick: () => { track('challenge_reply', { game: g.id, challenge_id: String(ch.seed) }); challengeHandled = true; clearChallengeCode(); linkSetup(g, { bet: ch.bet }); } })),
+    bottomCTA({ label: '결과 알려주기', onClick: () => shareAndToast(msg, { shared: '보냈어요', copied: '결과를 복사했어요', failed: '복사하지 못했어요', cancelled: '' }, (r) => track('challenge_result_shared', { game: g.id, result: r, challenge_id: String(ch.seed) })) })), leaveChallenge);
 }
 
 // ---------- 화면: 혼자 연습 ----------
 function practice(g) {
+  practiceRuns += 1;
   play(g, {
-    seed: newSeed(), lives: 1, label: '연습', meta: { mode: 'practice' },
+    seed: newSeed(), lives: 1, label: '연습', meta: { mode: 'practice' }, continueOffer: true,
     onDone: (score) => {
       const isBest = recordBest(g, score) && score > 0;
       if (isBest) sfx.win();
@@ -563,11 +603,11 @@ function practice(g) {
       show(page('has-cta',
         navBar(home, '처음으로'),
         art,
-        titleBlock(`${score}${g.unit}`, isBest ? '새 최고 기록이에요!' : `${g.title} · 최고 기록은 ${bestOf(g)}${g.unit}예요`, isBest ? badge('최고 기록', 'red') : null),
+        titleBlock(`${score}${g.unit}`, isBest ? '새 최고 기록이에요!' : `${g.title} · 최고 기록은 ${josa(`${bestOf(g)}${g.unit}`, '이에요', '예요')}`, isBest ? badge('최고 기록', 'red') : null),
         h('div', { class: 'list' },
           listRow({ iconName: 'send', tone: 'teal', title: '이 게임으로 도전장 보내기', chevron: true, onClick: () => { track('practice_next', { game: g.id, action: 'link' }); linkSetup(g); } }),
           listRow({ iconName: 'duo', tone: 'blue', title: '둘이 한 폰으로 하기', chevron: true, onClick: () => { track('practice_next', { game: g.id, action: 'duo' }); duoSetup(g); } })),
-        bottomCTA({ label: '바로 다시', onClick: () => { track('practice_next', { game: g.id, action: 'retry' }); practice(g); } }, { label: '다른 게임', onClick: () => { track('practice_next', { game: g.id, action: 'other_game' }); pickSolo(g); } })));
+        bottomCTA({ label: '바로 다시', onClick: async () => { track('practice_next', { game: g.id, action: 'retry' }); if (practiceRuns % 3 === 0) await interstitial('practice_retry'); practice(g); } }, { label: '다른 게임', onClick: () => { track('practice_next', { game: g.id, action: 'other_game' }); pickSolo(g); } })));
     },
   });
 }
@@ -576,11 +616,11 @@ function pickSolo(last) {
   show(page('',
     navBar(home, '처음으로'),
     titleBlock('다음 게임은?', '하고 싶은 게임을 골라요.'),
-    gameGrid((g) => { track('game_selected', { game: g.id, from: 'pick_solo', prev_game: last.id }); gameMenu(g); }, { current: last.id })));
+    gameGrid((g) => { track('game_selected', { game: g.id, from: 'pick_solo', prev_game: last.id }); gameMenu(g); }, { current: last.id })), home);
 }
 
 // ---------- 화면: 게임 ----------
-function play(game, { seed, lives, target = null, label, onDone, meta = {} }) {
+function play(game, { seed, lives, target = null, label, onDone, meta = {}, continueOffer = false }) {
   const s = game.create(seed, lives);
   if (QA.has('qa')) globalThis.__qa = { s, game }; // 검수용: ?qa 일 때만
   const auto = QA.has('bot');
@@ -599,7 +639,9 @@ function play(game, { seed, lives, target = null, label, onDone, meta = {} }) {
       h('div', { class: 'hud-top' }, quit, soundToggle(true)),
       h('div', { class: 'hud-center' }, scoreEl, h('div', { class: 'hud-sub' }, h('span', { class: 'who' }, label), livesEl), targetEl)),
     hint);
-  show(stage);
+  show(stage, () => finish());
+  setSwipeBack(false);
+  let usedContinue = false;
 
   const ctx = canvas.getContext('2d');
   const v = { W: 0, H: 0, dpr: 1, fx: new Fx(), dt: 0, layout: null, lastInputX: null, lastInputT: -9 };
@@ -687,7 +729,7 @@ function play(game, { seed, lives, target = null, label, onDone, meta = {} }) {
 
   function common(ev) {
     if (ev.type === 'score') {
-      if (!ev.quiet) { if (ev.perfect) { sfx.perfect(ev.combo); vibrate(12); } else sfx.tick(ev.combo); }
+      if (!ev.quiet) { if (ev.perfect) { sfx.perfect(ev.combo); haptic('perfect'); } else sfx.tick(ev.combo); }
       scoreEl.textContent = String(s.score);
       scoreEl.classList.remove('pop'); void scoreEl.offsetWidth; scoreEl.classList.add('pop');
       if (target != null && targetEl && !targetEl.classList.contains('passed') && s.score > target) {
@@ -697,14 +739,16 @@ function play(game, { seed, lives, target = null, label, onDone, meta = {} }) {
         v.fx.text(v.W / 2, v.H * 0.3, '역전!', { color: RED, size: 34, life: 1 });
       }
     } else if (ev.type === 'fail') {
-      sfx.hit(); vibrate(70);
+      sfx.hit(); haptic('fail');
       v.fx.shake(9, 0.3); v.fx.flash(RED, 0.18); v.fx.hitstop(90);
       renderLives();
       if (!s.over && s.lives > 0) v.fx.text(v.W / 2, v.H * 0.42, '목숨 1개 사용', { color: RED, size: 20, life: 0.9 });
     } else if (ev.type === 'over') {
       sfx.over();
       ended = true;
-      setTimeout(finish, 1100);
+      if (continueOffer && !usedContinue && s.score >= CONTINUE_MIN && adsAvailable() && adReady('rewarded') && typeof game.revive === 'function') {
+        setTimeout(offerContinue, 600);
+      } else setTimeout(finish, 1100);
     } else if (ev.type === 'jump') sfx.jump();
     else if (ev.type === 'whoosh') sfx.whoosh();
     else if (ev.type === 'thud') sfx.thud();
@@ -761,7 +805,34 @@ function play(game, { seed, lives, target = null, label, onDone, meta = {} }) {
   }
   raf = requestAnimationFrame(frame);
 
+  // 보상형 광고 '이어하기' 제안(연습 모드, 한 판에 한 번). 끝까지 시청해야만 이어집니다.
+  function offerContinue() {
+    if (done) return;
+    const box = h('div', { class: 'continue' },
+      h('div', { class: 'continue-card' },
+        h('p', { class: 'continue-score' }, `${s.score}${game.unit}`),
+        h('p', { class: 'continue-title' }, '여기서 이어서 할까요?'),
+        h('p', { class: 'continue-desc' }, '광고를 끝까지 보면 목숨 1개로 이어서 해요'),
+        h('button', { type: 'button', class: 'btn btn-primary btn-xl', onclick: async () => {
+          box.remove();
+          audio.suspend();
+          track('ad_continue_clicked', { game: game.id, score: s.score });
+          const r = await showAd('rewarded');
+          if (r.shown) track('ad_shown', { kind: 'rewarded', placement: 'practice_continue' });
+          if (!r.rewarded) { finish(); return; }
+          track('ad_reward', { game: game.id, score: s.score });
+          usedContinue = true;
+          game.revive(s);
+          renderLives();
+          ended = false;
+          begin();
+        } }, '광고 보고 이어하기'),
+        h('button', { type: 'button', class: 'text-btn light', onclick: () => { box.remove(); finish(); } }, '그만할게요')));
+    stage.append(box);
+  }
+
   const stop = () => {
+    setSwipeBack(true);
     cancelAnimationFrame(raf);
     ro.disconnect();
     removeEventListener('keydown', onKey);
@@ -784,11 +855,22 @@ function play(game, { seed, lives, target = null, label, onDone, meta = {} }) {
 // ---------- 시작 ----------
 let booted = false;
 function boot() {
-  const ch = readChallengeFromHash(location.hash);
+  const code = challengeHandled ? null : challengeCode();
+  const ch = code ? decodeChallenge(code) : null;
   if (!booted) { booted = true; track('app_opened', { entry: ch ? 'challenge' : 'direct' }); }
   if (ch) challengeIntro(ch);
   else if (QA.get('game') && byId(QA.get('game'))) gameMenu(byId(QA.get('game')));
   else home();
 }
-addEventListener('hashchange', boot);
-boot();
+
+async function start() {
+  await initPlatform();
+  store = loadJSON(KEY, DEFAULT_STORE);
+  if (typeof store.best === 'number') store.best = { rope: store.best }; // v0.1 기록 옮기기
+  initAnalytics({ version: VERSION, platform: env.platform });
+  onBack(() => { handleBack(); });
+  if (adsAvailable()) { preloadAd('interstitial'); preloadAd('rewarded'); }
+  addEventListener('hashchange', () => { challengeHandled = false; boot(); });
+  boot();
+}
+start();

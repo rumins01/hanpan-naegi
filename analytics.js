@@ -1,6 +1,7 @@
 // 익명 이용 기록(Mixpanel 프로젝트 "한판내기", id 4070275). 외부 스크립트 없이 HTTP로 직접 보냅니다.
 // 보내지 않는 것: 이름, 직접 쓴 내기 문구, 도전장 링크의 #d= 내용(이름이 들어 있음).
-// 보내는 곳: 배포 주소(github.io)에서만. 개발 서버와 ?qa 검수는 보내지 않고 메모리에만 남깁니다(?track이면 강제 전송).
+// 보내는 곳: 배포 주소(github.io)와 토스 앱 안에서만. 개발 서버와 ?qa 검수는 보내지 않고 메모리에만 남깁니다(?track이면 강제 전송).
+import { kv, env } from './platform.js';
 const TOKEN = 'e37ca5ec418de815b6760434ecdf46e8';
 const ENDPOINT = 'https://api-js.mixpanel.com/track/?ip=1';
 const UID_KEY = 'hanpan.uid';
@@ -9,7 +10,7 @@ const OPT_KEY = 'hanpan.analytics';
 const MAX_QUEUE = 200;
 
 const params = new URLSearchParams(location.search);
-const sendable = params.has('track') || (/\.github\.io$/.test(location.hostname) && !params.has('qa'));
+const sendable = params.has('track') || ((/\.github\.io$/.test(location.hostname) || env.isToss) && !params.has('qa'));
 
 const rid = () => {
   const a = new Uint32Array(4);
@@ -18,13 +19,9 @@ const rid = () => {
 };
 
 function uid() {
-  try {
-    let id = localStorage.getItem(UID_KEY);
-    if (!id) { id = rid(); localStorage.setItem(UID_KEY, id); }
-    return id;
-  } catch {
-    return 'anon';
-  }
+  let id = kv.get(UID_KEY);
+  if (!id) { id = rid(); kv.set(UID_KEY, id); }
+  return id;
 }
 
 function os() {
@@ -50,27 +47,25 @@ let queue = [];
 let timer = 0;
 export const sent = []; // 검수용: 이번 세션에 만든 이벤트(전송 여부와 무관)
 
-export const isEnabled = () => {
-  try { return localStorage.getItem(OPT_KEY) !== 'off'; } catch { return true; }
-};
+export const isEnabled = () => kv.get(OPT_KEY) !== 'off';
 export function setEnabled(on) {
-  try { localStorage.setItem(OPT_KEY, on ? 'on' : 'off'); } catch { /* 저장 불가 */ }
+  kv.set(OPT_KEY, on ? 'on' : 'off');
   if (!on) { queue = []; persistQueue(); }
 }
 
 function persistQueue() {
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue.slice(-MAX_QUEUE))); } catch { /* 저장 불가 */ }
+  kv.set(QUEUE_KEY, JSON.stringify(queue.slice(-MAX_QUEUE)));
 }
 
-export function initAnalytics({ version }) {
-  try { queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch { queue = []; }
+export function initAnalytics({ version, platform = 'web' }) {
+  try { queue = JSON.parse(kv.get(QUEUE_KEY) || '[]'); } catch { queue = []; }
   let ref = '$direct';
   try { if (document.referrer) ref = new URL(document.referrer).hostname || '$direct'; } catch { /* 무시 */ }
   base = {
     token: TOKEN,
     distinct_id: uid(),
     app_version: version,
-    platform: 'web',
+    platform,
     in_app: inApp(),
     $os: os(),
     $screen_width: screen.width,

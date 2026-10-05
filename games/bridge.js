@@ -102,6 +102,11 @@ function step(s, dt) {
   }
 }
 
+function revive(s) {
+  s.over = false; s.lives = 1; s.combo = 0;
+  s.heroX = base(s) - 0.2; s.heroY = 0; s.len = 0; s.angle = 0; s.timer = 0; s.phase = 'ready';
+}
+
 function bot(s) {
   if (s.phase === 'ready') return { type: 'down', x: 0.5, y: 0.5 };
   if (s.phase === 'grow') {
@@ -188,5 +193,5 @@ export default {
   accent: '#8a5a2b',
   focus: 0.55,
   unit: '점',
-  create, input, step, draw, onEvent, bot,
+  create, input, step, draw, onEvent, bot, revive,
 };

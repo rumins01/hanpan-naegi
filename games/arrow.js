@@ -96,6 +96,10 @@ function step(s, dt) {
   }
 }
 
+function revive(s) {
+  s.over = false; s.lives = 1; s.combo = 0; s.flying = null;
+}
+
 function bot(s) {
   if (s.flying || s.clearT > 0) return null;
   const st = s.st;
@@ -210,5 +214,5 @@ export default {
   accent: '#b58a4a',
   focus: 0.42,
   unit: '개',
-  create, input, step, draw, onEvent, bot,
+  create, input, step, draw, onEvent, bot, revive,
 };

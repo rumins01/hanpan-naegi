@@ -85,6 +85,10 @@ function step(s, dt) {
   }
 }
 
+function revive(s) {
+  s.over = false; s.lives = 1; s.combo = 0; s.moving = null; s.wait = 0.45;
+}
+
 function bot(s) {
   if (!s.moving || s.wait > 0) return null;
   const top = s.layers[s.layers.length - 1];
@@ -151,5 +155,5 @@ export default {
   accent: '#3f7a8c',
   focus: 0.62,
   unit: '층',
-  create, input, step, draw, onEvent, bot,
+  create, input, step, draw, onEvent, bot, revive,
 };

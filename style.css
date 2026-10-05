@@ -33,13 +33,13 @@ button, input { font: inherit; color: inherit; }
   max-width: 480px;
   margin: 0 auto;
   min-height: 100%;
-  padding: max(8px, env(safe-area-inset-top)) 0 max(32px, env(safe-area-inset-bottom));
+  padding: max(8px, var(--safe-top, env(safe-area-inset-top))) 0 max(32px, var(--safe-bottom, env(safe-area-inset-bottom)));
   display: flex;
   flex-direction: column;
 }
-.screen.has-cta { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
+.screen.has-cta { padding-bottom: calc(112px + var(--safe-bottom, env(safe-area-inset-bottom))); }
 .screen > :not(.divider):not(.list):not(.game-grid):not(.cta):not(.nav) { margin-left: var(--gutter); margin-right: var(--gutter); }
-.home { padding-top: max(28px, env(safe-area-inset-top)); }
+.home { padding-top: max(28px, var(--safe-top, env(safe-area-inset-top))); }
 
 /* 내비게이션 */
 .nav { height: 52px; display: flex; align-items: center; padding: 0 8px; }
@@ -116,7 +116,7 @@ button, input { font: inherit; color: inherit; }
 .cta { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; pointer-events: none; }
 .cta-inner {
   max-width: 480px; margin: 0 auto; pointer-events: auto;
-  padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+  padding: 20px 20px max(20px, var(--safe-bottom, env(safe-area-inset-bottom)));
   background: linear-gradient(rgba(255, 255, 255, 0), #fff 28%);
   display: flex; gap: 8px;
 }
@@ -134,7 +134,7 @@ button, input { font: inherit; color: inherit; }
 .card-title { margin: 2px 0 0; font-size: 20px; line-height: 29px; font-weight: 700; color: var(--grey900); }
 .card-body { margin: 6px 0 0; font-size: 15px; line-height: 22.5px; color: var(--grey700); white-space: pre-wrap; word-break: break-all; user-select: text; }
 .toast {
-  position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); z-index: 20;
+  position: fixed; left: 50%; bottom: calc(100px + var(--safe-bottom, env(safe-area-inset-bottom))); z-index: 20;
   transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
   width: max-content; max-width: calc(100% - 40px); padding: 14px 20px; border-radius: 14px; text-align: center;
   background: rgba(25, 31, 40, 0.92); color: #fff; font-size: 15px; font-weight: 500;
@@ -160,7 +160,7 @@ button, input { font: inherit; color: inherit; }
 /* 게임 화면 HUD: 흰 글자, 오른쪽 위는 앱인토스 버튼 자리로 비움 */
 .stage { position: fixed; inset: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; color: #fff; }
 .stage-canvas { display: block; width: 100%; height: 100%; }
-.hud { position: absolute; top: 0; left: 0; right: 0; padding: max(12px, env(safe-area-inset-top)) 12px 0; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.18); }
+.hud { position: absolute; top: 0; left: 0; right: 0; padding: max(12px, var(--safe-top, env(safe-area-inset-top))) 12px 0; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.18); }
 .hud-top { display: flex; gap: 8px; pointer-events: auto; width: max-content; }
 .hud-center { text-align: center; margin-top: 2px; }
 .count { font-size: 84px; line-height: 1; font-weight: 200; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
@@ -170,7 +170,7 @@ button, input { font: inherit; color: inherit; }
 .target.passed { background: var(--red500); text-shadow: none; }
 .hud-btn { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.24); color: #fff; cursor: pointer; }
 .hint {
-  position: absolute; left: 50%; bottom: max(10%, env(safe-area-inset-bottom));
+  position: absolute; left: 50%; bottom: max(10%, var(--safe-bottom, env(safe-area-inset-bottom)));
   transform: translateX(-50%); width: min(88%, 340px);
   text-align: center; display: flex; flex-direction: column; gap: 4px;
   padding: 16px 18px; border-radius: 18px;
@@ -193,3 +193,24 @@ button, input { font: inherit; color: inherit; }
   .count.pop { animation: none; }
   .btn, .thumb-wrap, .switch, .switch-knob, .toast { transition: none; }
 }
+
+/* v0.6: 토스 연동 화면 요소 */
+.btn-l { height: 48px; border-radius: 14px; font-size: 17px; }
+.text-btn.light { color: rgba(255, 255, 255, 0.85); }
+.dialog-wrap { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.45); }
+.dialog { width: min(100%, 360px); background: #fff; border-radius: 24px; padding: 24px 20px 20px; }
+.dialog-title { margin: 0; font-size: 20px; line-height: 29px; font-weight: 700; color: var(--grey900); }
+.dialog-desc { margin: 6px 0 0; font-size: 15px; line-height: 22.5px; color: var(--grey600); }
+.dialog-actions { display: flex; gap: 8px; margin-top: 24px; }
+.dialog-actions .btn { flex: 1; }
+.continue { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; padding: 24px; background: rgba(20, 18, 26, 0.45); }
+.continue-card { width: min(100%, 340px); background: #fff; color: var(--grey900); border-radius: 24px; padding: 28px 20px 12px; text-align: center; text-shadow: none; display: flex; flex-direction: column; gap: 6px; }
+.continue-score { margin: 0; font-size: 44px; font-weight: 200; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.continue-title { margin: 6px 0 0; font-size: 20px; font-weight: 700; }
+.continue-desc { margin: 0 0 14px; font-size: 15px; color: var(--grey600); }
+.continue-card .text-btn { color: var(--grey600); }
+.mock-ad { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: #111; color: #fff; }
+.mock-ad-box { text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; padding: 24px; }
+.mock-ad-label { font-size: 12px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #ffd400; color: #111; }
+.mock-ad-box p { margin: 0; color: #aaa; font-size: 14px; }
+.mock-ad-box button { min-width: 120px; height: 44px; border: 0; border-radius: 12px; font-weight: 700; }

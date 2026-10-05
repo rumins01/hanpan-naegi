@@ -86,6 +86,11 @@ function step(s, dt) {
   s.phase = next;
 }
 
+// 보상형 광고 '이어하기': 끝난 판을 목숨 1개로 다시 이어 갑니다.
+function revive(s) {
+  s.over = false; s.lives = 1; s.hitT = -1; s.combo = 0;
+}
+
 // 줄이 바닥에 닿기 직전(체공 시간의 절반 전)에 뛰는 봇. 테스트와 검수용.
 function bot(s) {
   if (s.airborne) return null;
@@ -170,5 +175,5 @@ export default {
   accent: ACCENT,
   focus: 0.6,
   unit: '개',
-  create, input, step, draw, onEvent, bot,
+  create, input, step, draw, onEvent, bot, revive,
 };
