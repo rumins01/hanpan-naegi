@@ -6,7 +6,7 @@ import {
 } from './duel.js';
 import { loadJSON, saveJSON, vibrate, challengeUrl, shareText, onHidden } from './platform.js';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 const KEY = 'hanpan.v1';
 const COLORS = { paper: '#f3eee4', ink: '#1c1a17', rule: '#d6cdbd', red: '#c23b2c', mute: '#7a7266' };
 
@@ -390,7 +390,8 @@ function play({ seed, lives, target = null, label, onDone }) {
   const targetEl = target != null ? h('div', { class: 'target' }, `목표 ${target + 1}개`) : null;
   const livesEl = h('div', { class: 'lives' });
   const hintTitle = h('strong', {}, '화면을 누르면 시작');
-  const hint = h('div', { class: 'hint' }, hintTitle, h('span', {}, '줄이 발밑에 올 때 눌러서 점프'));
+  const hintSub = h('span', {}, '줄이 발밑에 올 때 눌러서 점프');
+  const hint = h('div', { class: 'hint' }, hintTitle, hintSub);
   const quit = h('button', { type: 'button', class: 'hud-btn' }, '그만');
   const stage = h('div', { class: 'stage' },
     canvas,
@@ -415,7 +416,7 @@ function play({ seed, lives, target = null, label, onDone }) {
   ro.observe(canvas);
 
   let started = false; let paused = false; let ended = false; let done = false;
-  let raf = 0; let last = 0; let acc = 0;
+  let raf = 0; let last = 0; let acc = 0; let countdown = 0;
   const fx = { hit: 0, pulse: 0, passed: false };
   const renderLives = () => { livesEl.textContent = `목숨 ${'●'.repeat(Math.max(run.lives, 0))}`; };
   renderLives();
@@ -428,10 +429,14 @@ function play({ seed, lives, target = null, label, onDone }) {
     if (!started || paused) {
       started = true;
       paused = false;
-      hint.hidden = true;
+      countdown = 1.2; // 3, 2, 1 동안 줄은 머리 위에서 멈춰 있음
+      hintTitle.textContent = '3';
+      hintSub.hidden = true;
+      hint.classList.add('counting');
       last = performance.now();
       return;
     }
+    if (countdown > 0) return;
     jump(run);
   }
   const onKey = (e) => { if (e.code === 'Space') press(e); };
@@ -441,6 +446,8 @@ function play({ seed, lives, target = null, label, onDone }) {
     if (started && !ended) {
       paused = true;
       hintTitle.textContent = '화면을 누르면 계속';
+      hintSub.hidden = false;
+      hint.classList.remove('counting');
       hint.hidden = false;
     }
     actx?.suspend?.();
@@ -468,7 +475,12 @@ function play({ seed, lives, target = null, label, onDone }) {
   const FIXED = 1 / 240;
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    if (started && !paused && !ended) {
+    if (started && !paused && !ended && countdown > 0) {
+      countdown -= Math.min((now - last) / 1000, 0.05);
+      last = now;
+      if (countdown <= 0) { hint.hidden = true; hint.classList.remove('counting'); acc = 0; }
+      else hintTitle.textContent = String(Math.ceil(countdown / 0.4));
+    } else if (started && !paused && !ended) {
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
       acc += dt;

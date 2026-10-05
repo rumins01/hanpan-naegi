@@ -218,6 +218,8 @@ h2.big { font-size: 34px; }
 }
 .hint strong { font-size: 22px; }
 .hint span { font-size: 15px; color: var(--mute); }
+.hint.counting { bottom: auto; top: 27%; }
+.hint.counting strong { font-size: 64px; line-height: 1; }
 
 @media (max-width: 340px) {
   h1 { font-size: 38px; }
