@@ -140,6 +140,29 @@ function applySafeArea() {
   r.setProperty('--safe-bottom', `${ins.bottom}px`);
 }
 
+// ---------- 랭킹(토스 게임센터 리더보드) ----------
+// 미니앱 하나에 리더보드 1개. 콘솔에서 점수 단위 '점', 높은 점수 순으로 설정합니다.
+export const rankingAvailable = () => Boolean(AIT()?.Game?.setLeaderboardScore);
+
+// 반환: 'SUCCESS' | 'LEADERBOARD_NOT_FOUND' | 'PROFILE_NOT_FOUND' | 'UNPARSABLE_SCORE' | 'unsupported' | 'error' | 'web'
+export async function submitRankScore(total) {
+  const game = AIT()?.Game;
+  if (!game?.setLeaderboardScore) return 'web';
+  try {
+    const r = await withTimeout(game.setLeaderboardScore({ score: String(Math.round(total)) }), 8000);
+    return r?.statusCode || 'unsupported'; // 지원하지 않는 토스 버전은 undefined
+  } catch {
+    return 'error';
+  }
+}
+
+// 리더보드는 토스 화면으로 열리고, 그동안 미니앱은 백그라운드가 됩니다.
+export async function openRanking() {
+  const game = AIT()?.Game;
+  if (!game?.openLeaderboard) return false;
+  try { await game.openLeaderboard(); return true; } catch { return false; }
+}
+
 // ---------- 광고 ----------
 // 개발 중에는 반드시 테스트 광고 ID를 씁니다(실제 ID로 테스트하면 정책 위반). 출시 때 콘솔에서 받은 광고 그룹 ID로 바꿉니다.
 export const AD_GROUPS = {
@@ -156,18 +179,40 @@ export function adsAvailable() {
   return mockAds;
 }
 
+// 앱인토스 안내: 광고 그룹은 한 번에 하나씩 불러와야 해요(일부 안드로이드 토스 버전에서 동시 로드 시 이벤트 누락).
+// 그래서 요청을 줄 세워 앞의 로드가 끝난(성공·실패) 뒤에 다음 것을 부릅니다.
+const loadQueue = [];
+let loading = false;
+
 export function preloadAd(kind) {
   if (!adsAvailable() || adState[kind] !== 'idle') return;
   const ait = AIT();
   if (!ait) { adState[kind] = 'ready'; return; }
   adState[kind] = 'loading';
+  loadQueue.push(kind);
+  pumpLoads();
+}
+
+function pumpLoads() {
+  if (loading || !loadQueue.length) return;
+  const kind = loadQueue.shift();
+  loading = true;
+  let settled = false;
+  const done = (ok) => {
+    if (settled) return;
+    settled = true;
+    adState[kind] = ok ? 'ready' : 'idle';
+    loading = false;
+    pumpLoads();
+  };
+  setTimeout(() => done(false), 15000); // 응답이 없으면 15초 뒤 다음으로 넘어갑니다
   try {
-    ait.loadFullScreenAd({
+    AIT().loadFullScreenAd({
       options: { adGroupId: AD_GROUPS[kind] },
-      onEvent: (e) => { if (e.type === 'loaded') adState[kind] = 'ready'; },
-      onError: () => { adState[kind] = 'idle'; },
+      onEvent: (e) => { if (e.type === 'loaded') done(true); },
+      onError: () => done(false),
     });
-  } catch { adState[kind] = 'idle'; }
+  } catch { done(false); }
 }
 
 export const adReady = (kind) => adState[kind] === 'ready';

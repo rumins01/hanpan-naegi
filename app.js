@@ -8,23 +8,49 @@ import {
 import {
   initPlatform, env, loadJSON, saveJSON, haptic, challengeLink, shareText, onHidden, onBack, closeApp, setSwipeBack,
   challengeCode, clearChallengeCode, adsAvailable, preloadAd, adReady, showAd,
+  rankingAvailable, submitRankScore, openRanking,
 } from './platform.js';
+import { RANK_REF, gamePoints, totalPoints } from './rank.js';
 import { Fx } from './core/fx.js';
 import { createAudio } from './core/audio.js';
 import { FONT, ACCENT as RED } from './core/draw.js';
 import { initAnalytics, track, isEnabled, setEnabled, sent } from './analytics.js';
 
-export const VERSION = '0.6.0';
+export const VERSION = '0.7.0';
 const KEY = 'hanpan.v1';
 const QA = new URLSearchParams(location.search);
 
-const DEFAULT_STORE = { best: {}, sound: true, handicap: true, names: ['나', '상대'], bet: BETS[0], myName: '', h2h: {} };
+const DEFAULT_STORE = { best: {}, solo: null, rankSent: 0, sound: true, handicap: true, names: ['나', '상대'], bet: BETS[0], myName: '', h2h: {} };
 let store = { ...DEFAULT_STORE }; // initPlatform() 뒤에 기기 저장소에서 다시 읽습니다
 const persist = () => saveJSON(KEY, store);
 const bestOf = (g) => store.best[g.id] || 0;
 function recordBest(g, score) {
   if (score > bestOf(g)) { store.best = { ...store.best, [g.id]: score }; persist(); return true; }
   return false;
+}
+
+// 한판 점수(랭킹)용 기록: 혼자 연습과 도전장에서 낸 내 기록만 셉니다.
+// 둘이 한 폰 대결은 상대 기록이 섞이고 목숨 보정이 있어서 뺍니다. 광고 이어하기로 낸 기록은 인정합니다(누구나 한 판에 한 번).
+const rankTotal = () => totalPoints(store.solo);
+function recordSolo(g, score) {
+  const before = rankTotal();
+  if (score > (store.solo[g.id] || 0)) { store.solo = { ...store.solo, [g.id]: score }; persist(); }
+  const after = rankTotal();
+  if (after > before) track('rank_points_up', { game: g.id, gain: after - before, total: after });
+  syncRank(); // 판이 끝난 뒤에만 올립니다(토스 안내: 게임 진입 직후 제출 금지). 못 올린 점수도 여기서 다시 시도
+
+  return after - before;
+}
+// 토스 리더보드에 올리지 못한 점수가 있으면 판이 끝날 때마다 다시 올립니다(프로필이 아직 없을 때 등).
+let syncing = false;
+async function syncRank() {
+  const total = rankTotal();
+  if (!rankingAvailable() || syncing || total <= (store.rankSent || 0)) return;
+  syncing = true;
+  const status = await submitRankScore(total);
+  syncing = false;
+  track('rank_submitted', { status, total });
+  if (status === 'SUCCESS') { store.rankSent = total; persist(); }
 }
 
 const audio = createAudio(() => store.sound);
@@ -112,6 +138,7 @@ const ICONS = {
   swap: 'M7 7h11l-3-3 M17 17H6l3 3',
   home: 'M4 11l8-7 8 7 M6 9.5V20h12V9.5',
   check: 'M5 12.5l4.5 4.5L19 7.5',
+  trophy: 'M8 4h8v5a4 4 0 0 1-8 0V4z M8 6H5a3 3 0 0 0 3 4 M16 6h3a3 3 0 0 1-3 4 M12 13v4 M9 20h6 M10 17h4v3h-4z',
 };
 function icon(name, size = 24) {
   const NS = 'http://www.w3.org/2000/svg';
@@ -361,6 +388,8 @@ function home() {
   show(page('home',
     titleBlock('한판내기', '1분짜리 게임으로 내기해요. 진 사람이 설거지!'),
     gameGrid((g) => { track('game_selected', { game: g.id, from: 'home' }); gameMenu(g); }),
+    h('div', { class: 'list' },
+      listRow({ iconName: 'trophy', tone: 'red', title: '내 한판 점수', sub: rankingAvailable() ? '토스 랭킹에서 순위를 볼 수 있어요' : '게임 6개 최고 기록을 더한 점수예요', right: `${rankTotal()}점`, chevron: true, onClick: () => { track('rank_screen_opened', { from: 'home' }); rankScreen(); } })),
     divider(),
     sectionHeader('설정'),
     h('div', { class: 'list' },
@@ -521,6 +550,7 @@ async function shareAndToast(msg, texts, onResult) {
 
 async function linkReady(g, ch) {
   const isBest = recordBest(g, ch.score);
+  recordSolo(g, ch.score);
   const url = await challengeLink(encodeChallenge(ch));
   const msg = `[${g.title}] ${ch.name}의 기록 ${ch.score}${g.unit}. 지는 사람이 ${ch.bet}. 이길 수 있어요?\n${url}`;
   track('challenge_created', { game: g.id, score: ch.score, challenge_id: String(ch.seed), bet_type: betType(ch.bet), new_best: isBest });
@@ -574,6 +604,7 @@ function challengeResult(g, ch, me, score) {
   const scores = [score, ch.score];
   const res = decide(scores);
   recordBest(g, score);
+  recordSolo(g, score);
   if (res.winner === 0) sfx.win();
   track('challenge_finished', { game: g.id, outcome: res.winner === 0 ? 'win' : res.winner === 1 ? 'lose' : 'tie', my_score: score, their_score: ch.score, challenge_id: String(ch.seed) });
   const loser = res.loser === null ? null : names[res.loser];
@@ -590,6 +621,25 @@ function challengeResult(g, ch, me, score) {
     bottomCTA({ label: '결과 알려주기', onClick: () => shareAndToast(msg, { shared: '보냈어요', copied: '결과를 복사했어요', failed: '복사하지 못했어요', cancelled: '' }, (r) => track('challenge_result_shared', { game: g.id, result: r, challenge_id: String(ch.seed) })) })), leaveChallenge);
 }
 
+// ---------- 화면: 한판 점수 ----------
+function rankScreen() {
+  const total = rankTotal();
+  const unplayed = GAMES.find((g) => !store.solo[g.id]);
+  const toss = rankingAvailable();
+  show(page('has-cta',
+    navBar(home, '처음으로'),
+    titleBlock(`${total}점`, '내 한판 점수 · 게임마다 내 최고 기록을 점수로 바꿔 더했어요'),
+    h('div', { class: 'list' },
+      GAMES.map((g) => {
+        const best = store.solo[g.id] || 0;
+        return listRow({ title: g.title, sub: best ? `최고 ${best}${g.unit}` : '아직 안 해 봤어요', right: `${gamePoints(g.id, best)}점`, chevron: true, onClick: () => { track('game_selected', { game: g.id, from: 'rank' }); gameMenu(g); } });
+      })),
+    h('p', { class: 'footnote' }, `혼자 연습과 도전장에서 낸 기록만 들어가요. 둘이 한 폰으로 한 기록은 빠져요. 게임마다 ${RANK_REF.stairs}칸, ${RANK_REF.stack}층처럼 정해진 기준 기록을 내면 100점이고, 한 게임만 높이는 것보다 여러 게임을 고루 하면 점수가 더 잘 올라요.`),
+    toss
+      ? bottomCTA({ label: '토스 랭킹 보기', onClick: async () => { track('rank_opened', { total }); await syncRank(); openRanking(); } })
+      : bottomCTA(unplayed ? { label: `${unplayed.title} 해 보기`, onClick: () => { track('game_selected', { game: unplayed.id, from: 'rank_cta' }); gameMenu(unplayed); } } : { label: '처음으로', onClick: home })), home);
+}
+
 // ---------- 화면: 혼자 연습 ----------
 function practice(g) {
   practiceRuns += 1;
@@ -597,7 +647,9 @@ function practice(g) {
     seed: newSeed(), lives: 1, label: '연습', meta: { mode: 'practice' }, continueOffer: true,
     onDone: (score) => {
       const isBest = recordBest(g, score) && score > 0;
+      const gain = recordSolo(g, score);
       if (isBest) sfx.win();
+      if (gain > 0) setTimeout(() => toast(`한판 점수 +${gain}점 · 지금 ${rankTotal()}점`), 400);
       const art = h('canvas', { class: 'thumb hero', 'aria-hidden': 'true' });
       requestAnimationFrame(() => { if (art.isConnected) drawThumb(g, art); });
       show(page('has-cta',
@@ -867,6 +919,7 @@ async function start() {
   await initPlatform();
   store = loadJSON(KEY, DEFAULT_STORE);
   if (typeof store.best === 'number') store.best = { rope: store.best }; // v0.1 기록 옮기기
+  if (!store.solo) { store.solo = { ...store.best }; persist(); } // v0.6 이전 기록은 처음 한 번 그대로 옮깁니다
   initAnalytics({ version: VERSION, platform: env.platform });
   onBack(() => { handleBack(); });
   if (adsAvailable()) { preloadAd('interstitial'); preloadAd('rewarded'); }
