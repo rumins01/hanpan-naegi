@@ -143,7 +143,7 @@ button, input { font: inherit; color: inherit; }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
 
 /* 게임 카드 그리드(Grid List) */
-.game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 12px; padding: 0 var(--gutter); }
+.game-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px 12px; padding: 0 var(--gutter); }
 .game-card { display: flex; flex-direction: column; gap: 10px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
 .thumb-wrap { position: relative; display: block; border-radius: 20px; overflow: hidden; background: var(--grey100); transition: transform 120ms ease; }
 .game-card:active .thumb-wrap { transform: scale(0.97); }

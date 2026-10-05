@@ -16,9 +16,10 @@ import { createAudio } from './core/audio.js';
 import { FONT, ACCENT as RED } from './core/draw.js';
 import { initAnalytics, track, isEnabled, setEnabled, sent } from './analytics.js';
 
-export const VERSION = '0.7.0';
+export const VERSION = '0.7.1';
 const KEY = 'hanpan.v1';
 const QA = new URLSearchParams(location.search);
+const DPR_QA = Math.min(Number(QA.get('dpr')) || 0, 4); // 검수·스토어 캡처용 고해상도(?dpr=3)
 
 const DEFAULT_STORE = { best: {}, solo: null, rankSent: 0, sound: true, handicap: true, names: ['나', '상대'], bet: BETS[0], myName: '', h2h: {} };
 let store = { ...DEFAULT_STORE }; // initPlatform() 뒤에 기기 저장소에서 다시 읽습니다
@@ -276,7 +277,7 @@ function penaltyCard(loserName, bet) {
 
 // ---------- 캔버스 도우미: 썸네일과 봇 데모 ----------
 function sizeCanvas(canvas) {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = DPR_QA || Math.min(window.devicePixelRatio || 1, 2);
   const W = canvas.clientWidth || 160;
   const H = canvas.clientHeight || 160;
   canvas.width = Math.round(W * dpr);
@@ -698,7 +699,7 @@ function play(game, { seed, lives, target = null, label, onDone, meta = {}, cont
   const ctx = canvas.getContext('2d');
   const v = { W: 0, H: 0, dpr: 1, fx: new Fx(), dt: 0, layout: null, lastInputX: null, lastInputT: -9 };
   const resize = () => {
-    v.dpr = Math.min(window.devicePixelRatio || 1, 3);
+    v.dpr = DPR_QA || Math.min(window.devicePixelRatio || 1, 3);
     v.W = canvas.clientWidth;
     v.H = canvas.clientHeight;
     canvas.width = Math.round(v.W * v.dpr);
