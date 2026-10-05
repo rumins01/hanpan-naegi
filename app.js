@@ -16,7 +16,7 @@ import { createAudio } from './core/audio.js';
 import { FONT, ACCENT as RED } from './core/draw.js';
 import { initAnalytics, track, isEnabled, setEnabled, sent } from './analytics.js';
 
-export const VERSION = '0.7.2';
+export const VERSION = '0.7.3';
 const KEY = 'hanpan.v1';
 const QA = new URLSearchParams(location.search);
 const DPR_QA = Math.min(Number(QA.get('dpr')) || 0, 4); // 검수·스토어 캡처용 고해상도(?dpr=3)
@@ -245,7 +245,7 @@ function soundToggle(compact = false) {
 function betPicker(initial) {
   const labels = [...BETS, '직접 쓰기'];
   let chosen = BETS.includes(initial) ? initial : initial ? '직접 쓰기' : BETS[0];
-  const custom = textField('내기 직접 쓰기', chosen === '직접 쓰기' ? initial : '', { maxlength: LIMIT.bet, placeholder: '예: 이번 주 장보기' });
+  const custom = textField('벌칙 직접 쓰기', chosen === '직접 쓰기' ? initial : '', { maxlength: LIMIT.bet, placeholder: '예: 이번 주 장보기' });
   const chips = labels.map((label) => h('button', {
     type: 'button', class: 'chip',
     onclick: () => { chosen = label; sync(); if (label === '직접 쓰기') custom.input.focus(); },
@@ -271,7 +271,7 @@ function scoreList(g, names, scores, winner) {
 function penaltyCard(loserName, bet) {
   if (loserName == null) return h('div', { class: 'card-soft' }, h('p', { class: 'card-caption' }, '무승부'), h('p', { class: 'card-title' }, '한 판 더 해서 정하세요'));
   return h('div', { class: 'card-soft tone-red' },
-    h('p', { class: 'card-caption' }, '내기 당첨'),
+    h('p', { class: 'card-caption' }, '벌칙 당첨'),
     h('p', { class: 'card-title' }, `${loserName}, ${bet}`));
 }
 
@@ -387,7 +387,7 @@ function gameGrid(onPick, { current = null } = {}) {
 function home() {
   const played = Object.keys(store.best).length;
   show(page('home',
-    titleBlock('한판내기', '1분짜리 게임으로 내기해요. 진 사람이 설거지!'),
+    titleBlock('한판내기', '1분짜리 게임으로 한 판 붙어요. 진 사람이 설거지!'),
     gameGrid((g) => { track('game_selected', { game: g.id, from: 'home' }); gameMenu(g); }),
     h('div', { class: 'list' },
       listRow({ iconName: 'trophy', tone: 'red', title: '내 한판 점수', sub: rankingAvailable() ? '토스 랭킹에서 순위를 볼 수 있어요' : '게임 6개 최고 기록을 더한 점수예요', right: `${rankTotal()}점`, chevron: true, onClick: () => { track('rank_screen_opened', { from: 'home' }); rankScreen(); } })),
@@ -395,7 +395,7 @@ function home() {
     sectionHeader('설정'),
     h('div', { class: 'list' },
       listRow({ title: '효과음', control: soundToggle() }),
-      listRow({ title: '이용 기록 보내기', sub: '게임을 고치는 데만 써요. 이름과 내기 내용은 보내지 않아요', control: switchEl(isEnabled(), (v) => { if (!v) track('setting_changed', { setting: 'analytics', value: false }); setEnabled(v); }, '이용 기록 보내기') }),
+      listRow({ title: '이용 기록 보내기', sub: '게임을 고치는 데만 써요. 이름과 벌칙 내용은 보내지 않아요', control: switchEl(isEnabled(), (v) => { if (!v) track('setting_changed', { setting: 'analytics', value: false }); setEnabled(v); }, '이용 기록 보내기') }),
       listRow({ title: '해 본 게임', right: `${played} / ${GAMES.length}` })),
     h('p', { class: 'footnote' }, '두 사람이 같은 판으로 겨뤄요. 점수와 전적은 이 기기에만 저장돼요.')), null);
 }
@@ -411,7 +411,7 @@ function gameMenu(g) {
     divider(),
     sectionHeader('어떻게 할까요?'),
     h('div', { class: 'list' },
-      listRow({ iconName: 'duo', tone: 'blue', title: '둘이 한 폰으로', sub: '번갈아 하고, 진 사람이 내기해요', chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'duo' }); duoSetup(g); } }),
+      listRow({ iconName: 'duo', tone: 'blue', title: '둘이 한 폰으로', sub: '번갈아 하고, 진 사람이 벌칙을 해요', chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'duo' }); duoSetup(g); } }),
       listRow({ iconName: 'send', tone: 'teal', title: '도전장 보내기', sub: '링크를 받은 사람이 같은 판으로 도전해요', chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'link' }); linkSetup(g); } }),
       listRow({ iconName: 'target', tone: 'grey', title: '혼자 연습', sub: best ? `내 최고 기록 ${best}${g.unit}` : `혼자 기록 올리기 · ${g.control}`, chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'practice' }); practice(g); } }))), home);
   requestAnimationFrame(() => { if (demo.isConnected) cleanup = runDemo(g, demo); });
@@ -609,7 +609,7 @@ function challengeResult(g, ch, me, score) {
   if (res.winner === 0) sfx.win();
   track('challenge_finished', { game: g.id, outcome: res.winner === 0 ? 'win' : res.winner === 1 ? 'lose' : 'tie', my_score: score, their_score: ch.score, challenge_id: String(ch.seed) });
   const loser = res.loser === null ? null : names[res.loser];
-  const msg = `[${g.title}] 내기 결과: ${me} ${score}${g.unit}, ${ch.name} ${ch.score}${g.unit}. `
+  const msg = `[${g.title}] 대결 결과: ${me} ${score}${g.unit}, ${ch.name} ${ch.score}${g.unit}. `
     + (loser ? `${josa(loser, '이', '가')} ${ch.bet}!` : '무승부!');
   show(page('has-cta',
     navBar(leaveChallenge, '처음으로'),
