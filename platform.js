@@ -2,7 +2,7 @@
 // 토스 빌드(toss/src/main.js)가 공식 SDK 함수를 globalThis.__AIT에 넣어 주면 토스 모드로 동작하고,
 // 없으면 일반 웹 모드(localStorage, navigator.share, 진동 API)로 동작합니다.
 
-export const APP_NAME = 'hanpan-naegi'; // 앱인토스 콘솔의 appName과 같아야 합니다(등록 후 바꿀 수 없음)
+export const APP_NAME = 'hanpan-duel'; // 앱인토스 콘솔의 appName과 같아야 합니다(등록 후 바꿀 수 없음)
 const AIT = () => globalThis.__AIT || null;
 const QS = new URLSearchParams(location.search);
 

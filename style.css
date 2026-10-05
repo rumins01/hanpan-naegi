@@ -1,4 +1,4 @@
-/* 한판내기 v0.4: 게임 바깥 화면은 토스 디자인 시스템(TDS) 문법. 기준: DESIGN.md 8장.
+/* 한판붙자(구 한판내기) v0.4: 게임 바깥 화면은 토스 디자인 시스템(TDS) 문법. 기준: DESIGN.md 8장.
    값의 출처: tossmini-docs.toss.im TDS Mobile Colors/Typography 문서, Button·TextField 실측(2026-10-05). */
 :root {
   /* TDS 색 */
@@ -214,3 +214,6 @@ button, input { font: inherit; color: inherit; }
 .mock-ad-label { font-size: 12px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #ffd400; color: #111; }
 .mock-ad-box p { margin: 0; color: #aaa; font-size: 14px; }
 .mock-ad-box button { min-width: 120px; height: 44px; border: 0; border-radius: 12px; font-weight: 700; }
+
+/* v0.8: 벌칙 카드 아래 한 줄 */
+.card-tail { margin: 6px 0 0; font-size: 14px; line-height: 21px; font-weight: 600; color: var(--red500); }

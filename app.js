@@ -16,7 +16,7 @@ import { createAudio } from './core/audio.js';
 import { FONT, ACCENT as RED } from './core/draw.js';
 import { initAnalytics, track, isEnabled, setEnabled, sent } from './analytics.js';
 
-export const VERSION = '0.7.3';
+export const VERSION = '0.8.0';
 const KEY = 'hanpan.v1';
 const QA = new URLSearchParams(location.search);
 const DPR_QA = Math.min(Number(QA.get('dpr')) || 0, 4); // 검수·스토어 캡처용 고해상도(?dpr=3)
@@ -106,7 +106,7 @@ function confirmDialog({ title, desc, ok = '확인', cancel = '취소' }) {
 async function handleBack() {
   if (dialogOpen) { dialogOpen(); return; }
   if (backAction) { backAction(); return; }
-  const yes = await confirmDialog({ title: '한판내기를 종료할까요?', ok: '종료하기', cancel: '취소' });
+  const yes = await confirmDialog({ title: '한판붙자를 종료할까요?', ok: '종료하기', cancel: '취소' });
   if (yes) closeApp();
 }
 
@@ -268,11 +268,13 @@ function scoreList(g, names, scores, winner) {
   })));
 }
 
+const RETRY_LINE = '억울하면 한 판 더'; // 결과 화면과 결과 공유 메시지의 공통 문구
 function penaltyCard(loserName, bet) {
   if (loserName == null) return h('div', { class: 'card-soft' }, h('p', { class: 'card-caption' }, '무승부'), h('p', { class: 'card-title' }, '한 판 더 해서 정하세요'));
   return h('div', { class: 'card-soft tone-red' },
     h('p', { class: 'card-caption' }, '벌칙 당첨'),
-    h('p', { class: 'card-title' }, `${loserName}, ${bet}`));
+    h('p', { class: 'card-title' }, `${loserName}, ${bet}`),
+    h('p', { class: 'card-tail' }, RETRY_LINE));
 }
 
 // ---------- 캔버스 도우미: 썸네일과 봇 데모 ----------
@@ -387,7 +389,7 @@ function gameGrid(onPick, { current = null } = {}) {
 function home() {
   const played = Object.keys(store.best).length;
   show(page('home',
-    titleBlock('한판내기', '1분짜리 게임으로 한 판 붙어요. 진 사람이 설거지!'),
+    titleBlock('한판붙자', '가위바위보 말고 1분 게임으로 정해요'),
     gameGrid((g) => { track('game_selected', { game: g.id, from: 'home' }); gameMenu(g); }),
     h('div', { class: 'list' },
       listRow({ iconName: 'trophy', tone: 'red', title: '내 한판 점수', sub: rankingAvailable() ? '토스 랭킹에서 순위를 볼 수 있어요' : '게임 6개 최고 기록을 더한 점수예요', right: `${rankTotal()}점`, chevron: true, onClick: () => { track('rank_screen_opened', { from: 'home' }); rankScreen(); } })),
@@ -553,7 +555,7 @@ async function linkReady(g, ch) {
   const isBest = recordBest(g, ch.score);
   recordSolo(g, ch.score);
   const url = await challengeLink(encodeChallenge(ch));
-  const msg = `[${g.title}] ${ch.name}의 기록 ${ch.score}${g.unit}. 지는 사람이 ${ch.bet}. 이길 수 있어요?\n${url}`;
+  const msg = `[${g.title}] ${josa(ch.name, '이', '가')} ${josa(`${ch.score}${g.unit}`, '으로', '로')} 한판붙자고 해요. 지는 사람이 ${ch.bet}. 1분이면 끝나요\n${url}`;
   track('challenge_created', { game: g.id, score: ch.score, challenge_id: String(ch.seed), bet_type: betType(ch.bet), new_best: isBest });
   show(page('has-cta',
     navBar(home, '처음으로'),
@@ -610,7 +612,7 @@ function challengeResult(g, ch, me, score) {
   track('challenge_finished', { game: g.id, outcome: res.winner === 0 ? 'win' : res.winner === 1 ? 'lose' : 'tie', my_score: score, their_score: ch.score, challenge_id: String(ch.seed) });
   const loser = res.loser === null ? null : names[res.loser];
   const msg = `[${g.title}] 대결 결과: ${me} ${score}${g.unit}, ${ch.name} ${ch.score}${g.unit}. `
-    + (loser ? `${josa(loser, '이', '가')} ${ch.bet}!` : '무승부!');
+    + (loser ? `${josa(loser, '이', '가')} ${ch.bet}! ${RETRY_LINE}` : `무승부! ${RETRY_LINE}`);
   show(page('has-cta',
     navBar(leaveChallenge, '처음으로'),
     titleBlock(res.winner === 0 ? '이겼어요!' : res.winner === 1 ? '아쉽게 졌어요' : '무승부예요', `${g.title} · 도전 결과`),
