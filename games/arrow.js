@@ -1,5 +1,5 @@
 // 화살 꽂기: 탭하면 화살이 날아가 회전하는 과녁에 꽂혀요. 이미 꽂힌 화살에 닿으면 실패.
-// 정해진 개수를 다 꽂으면 과녁이 깨지고 다음 단계. 참고작: Knife Hit(Ketchapp, 구글플레이 1억+).
+// 정해진 개수를 다 꽂으면 과녁이 깨지고 다음 단계.
 import { rng, range } from '../core/rng.js';
 import { ACCENT, WHITE, theme, background, circle, label } from '../core/draw.js';
 
@@ -210,7 +210,6 @@ export default {
   title: '화살 꽂기',
   rule: '탭하면 화살이 날아가요. 이미 꽂힌 화살에 닿지 않게 과녁에 꽂으세요.',
   control: '탭',
-  ref: 'Knife Hit',
   accent: '#b58a4a',
   focus: 0.42,
   unit: '개',

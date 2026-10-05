@@ -1,5 +1,5 @@
 // 똥 피하기: 화면 왼쪽·오른쪽을 누르고 있으면 그쪽으로 움직여요. 바닥에 떨어진 똥 하나가 1점.
-// 참고작: 똥피하기 계열(똥왕의 분노, 구글플레이 100만+). 떨어지는 순서와 속도는 시드로 정해져 두 사람이 같아요.
+// 떨어지는 순서와 속도는 시드로 정해져 두 사람이 같아요.
 import { rng, range, clamp } from '../core/rng.js';
 import { ACCENT, WHITE, theme, background, figure, shadow, label } from '../core/draw.js';
 
@@ -173,7 +173,6 @@ export default {
   title: '똥 피하기',
   rule: '화면 왼쪽·오른쪽을 누르고 있으면 그쪽으로 가요. 떨어지는 똥을 피하세요.',
   control: '좌우 누르기',
-  ref: '똥피하기',
   accent: '#7b5133',
   focus: 0.7,
   unit: '개',

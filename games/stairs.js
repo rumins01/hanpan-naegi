@@ -1,5 +1,5 @@
 // 계단 오르기: 오른쪽은 '오르기', 왼쪽은 '방향 바꾸기'. 계단이 꺾이는 곳에서 방향을 바꿔야 해요.
-// 시간 막대가 계속 줄고, 한 칸 오를 때마다 조금 찹니다. 참고작: 무한의 계단(구글플레이 1,000만+).
+// 시간 막대가 계속 줄고, 한 칸 오를 때마다 조금 찹니다.
 import { rng } from '../core/rng.js';
 import { ACCENT, WHITE, theme, background, figure, roundRect, slab, label, FONT } from '../core/draw.js';
 
@@ -157,7 +157,6 @@ export default {
   title: '계단 오르기',
   rule: '오른쪽은 오르기, 왼쪽은 방향 바꾸기. 계단이 꺾이면 방향을 바꿔요.',
   control: '좌우 탭',
-  ref: '무한의 계단',
   accent: '#5f8f5a',
   focus: 0.5,
   unit: '칸',

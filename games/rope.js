@@ -1,4 +1,4 @@
-// 줄넘기: 줄이 발밑을 지날 때 공중에 있으면 1개. 참고작: 침착한 줄넘기(방치된 인기작).
+// 줄넘기: 줄이 발밑을 지날 때 공중에 있으면 1개.
 // v1 도전장과 같은 판이 나오도록 줄 속도 생성 방식은 바꾸지 않습니다.
 import { rng } from '../core/rng.js';
 import { ACCENT, theme, background, figure, shadow } from '../core/draw.js';
@@ -171,7 +171,6 @@ export default {
   title: '줄넘기',
   rule: '줄이 발밑에 올 때 탭해서 점프. 줄 속도가 갑자기 바뀌어요.',
   control: '탭',
-  ref: '침착한 줄넘기',
   accent: ACCENT,
   focus: 0.6,
   unit: '개',

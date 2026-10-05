@@ -1,5 +1,5 @@
 // 다리 놓기: 꾹 누르면 막대가 자라고, 떼면 넘어져 다리가 됩니다. 다음 기둥에 닿으면 건너요.
-// 참고작: Stick Hero(Ketchapp, 구글플레이 1,000만+). 기둥 가운데 빨간 점에 맞추면 2점.
+// 기둥 가운데 빨간 점에 맞추면 2점.
 import { rng, range } from '../core/rng.js';
 import { ACCENT, theme, background, figure, label } from '../core/draw.js';
 
@@ -189,7 +189,6 @@ export default {
   title: '다리 놓기',
   rule: '꾹 눌러 막대를 키우고, 떼서 다리를 놓아요. 빨간 점에 맞추면 2점.',
   control: '꾹 눌렀다 떼기',
-  ref: 'Stick Hero',
   accent: '#8a5a2b',
   focus: 0.55,
   unit: '점',

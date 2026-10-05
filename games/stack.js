@@ -1,5 +1,5 @@
 // 탑 쌓기: 좌우로 오가는 블록을 탭해서 내려놓기. 어긋난 만큼 잘리고, 완전히 빗나가면 끝.
-// 참고작: Stack(Ketchapp, 구글플레이 5,000만+). 완벽 연속이면 블록이 다시 커집니다.
+// 완벽 연속이면 블록이 다시 커집니다.
 import { rng, range } from '../core/rng.js';
 import { theme, background, hsl, slab } from '../core/draw.js';
 
@@ -151,7 +151,6 @@ export default {
   title: '탑 쌓기',
   rule: '움직이는 블록을 탭해서 쌓기. 어긋난 만큼 잘려요. 딱 맞추면 다시 커져요.',
   control: '탭',
-  ref: 'Stack',
   accent: '#3f7a8c',
   focus: 0.62,
   unit: '층',

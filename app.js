@@ -16,7 +16,7 @@ import { createAudio } from './core/audio.js';
 import { FONT, ACCENT as RED } from './core/draw.js';
 import { initAnalytics, track, isEnabled, setEnabled, sent } from './analytics.js';
 
-export const VERSION = '0.7.1';
+export const VERSION = '0.7.2';
 const KEY = 'hanpan.v1';
 const QA = new URLSearchParams(location.search);
 const DPR_QA = Math.min(Number(QA.get('dpr')) || 0, 4); // 검수·스토어 캡처용 고해상도(?dpr=3)
@@ -413,7 +413,7 @@ function gameMenu(g) {
     h('div', { class: 'list' },
       listRow({ iconName: 'duo', tone: 'blue', title: '둘이 한 폰으로', sub: '번갈아 하고, 진 사람이 내기해요', chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'duo' }); duoSetup(g); } }),
       listRow({ iconName: 'send', tone: 'teal', title: '도전장 보내기', sub: '링크를 받은 사람이 같은 판으로 도전해요', chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'link' }); linkSetup(g); } }),
-      listRow({ iconName: 'target', tone: 'grey', title: '혼자 연습', sub: best ? `내 최고 기록 ${best}${g.unit}` : `${g.ref} 방식 · ${g.control}`, chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'practice' }); practice(g); } }))), home);
+      listRow({ iconName: 'target', tone: 'grey', title: '혼자 연습', sub: best ? `내 최고 기록 ${best}${g.unit}` : `혼자 기록 올리기 · ${g.control}`, chevron: true, onClick: () => { track('mode_selected', { game: g.id, mode: 'practice' }); practice(g); } }))), home);
   requestAnimationFrame(() => { if (demo.isConnected) cleanup = runDemo(g, demo); });
 }
 
