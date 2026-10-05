@@ -7,9 +7,9 @@ import {
 import { loadJSON, saveJSON, vibrate, challengeUrl, shareText, onHidden } from './platform.js';
 import { Fx } from './core/fx.js';
 import { createAudio } from './core/audio.js';
-import { FONT, RED } from './core/draw.js';
+import { FONT, ACCENT as RED } from './core/draw.js';
 
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 const KEY = 'hanpan.v1';
 const QA = new URLSearchParams(location.search);
 
@@ -58,15 +58,41 @@ function josa(word, withFinal, withoutFinal) {
   return `${word}${withFinal}(${withoutFinal})`;
 }
 
+const ICONS = {
+  soundOn: 'M4 9v6h4l5 4V5L8 9H4z M16 8.5a5 5 0 0 1 0 7 M18.5 6a8.5 8.5 0 0 1 0 12',
+  soundOff: 'M4 9v6h4l5 4V5L8 9H4z M16 9.5l5 5 M21 9.5l-5 5',
+  close: 'M6 6l12 12 M18 6L6 18',
+};
+function icon(name) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', ICONS[name]);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '2');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.append(path);
+  return svg;
+}
+
 function soundToggle(compact = false) {
-  const label = () => (compact ? (store.sound ? '소리 켬' : '소리 끔') : (store.sound ? '소리 켜짐' : '소리 꺼짐'));
-  const btn = h('button', { type: 'button', class: compact ? 'hud-btn' : 'link', 'aria-pressed': String(store.sound) }, label());
+  const btn = h('button', { type: 'button', class: compact ? 'hud-btn' : 'link', 'aria-pressed': String(store.sound) });
+  const render = () => {
+    btn.setAttribute('aria-pressed', String(store.sound));
+    btn.setAttribute('aria-label', store.sound ? '소리 끄기' : '소리 켜기');
+    if (compact) btn.replaceChildren(icon(store.sound ? 'soundOn' : 'soundOff'));
+    else btn.textContent = store.sound ? '소리 켜짐' : '소리 꺼짐';
+  };
+  render();
   btn.addEventListener('click', () => {
     store.sound = !store.sound;
     persist();
     if (!store.sound) audio.suspend();
-    btn.textContent = label();
-    btn.setAttribute('aria-pressed', String(store.sound));
+    render();
   });
   return btn;
 }
@@ -145,11 +171,11 @@ function drawThumb(game, canvas) {
   octx.setTransform(k, 0, 0, k, 0, 0);
   const s = warm(game, 7, 4);
   game.draw(octx, s, { W: VW, H: VH, dpr: k, fx: new Fx(), dt: 1, layout: null, thumb: true });
-  const side = VW;
-  const cy = Math.min(VH - side / 2, Math.max(side / 2, VH * (game.focus ?? 0.5)));
+  const ch = Math.min(VH, VW * (H / W)); // 캔버스 비율대로 잘라 찌그러지지 않게
+  const cy = Math.min(VH - ch / 2, Math.max(ch / 2, VH * (game.focus ?? 0.5)));
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(off, 0, (cy - side / 2) * k, side * k, side * k, 0, 0, W * dpr, H * dpr);
+  ctx.drawImage(off, 0, (cy - ch / 2) * k, VW * k, ch * k, 0, 0, W * dpr, H * dpr);
 }
 
 // 봇이 실제로 플레이하는 데모(소리 없음). 반환값은 정지 함수.
@@ -157,7 +183,7 @@ function runDemo(game, canvas) {
   const ctx = canvas.getContext('2d');
   let dims = sizeCanvas(canvas);
   let s = game.create(newSeed(), 99);
-  const v = { W: dims.W, H: dims.H, fx: new Fx(), dt: 0, layout: null };
+  const v = { W: dims.W, H: dims.H, fx: new Fx(), dt: 0, layout: null, thumb: true };
   let raf = 0; let last = performance.now(); let acc = 0; let alive = true;
   const frame = (now) => {
     if (!alive) return;
@@ -191,25 +217,48 @@ function runDemo(game, canvas) {
   return () => { alive = false; cancelAnimationFrame(raf); ro.disconnect(); };
 }
 
-// ---------- 화면: 처음 ----------
-function home() {
+// ---------- 공용 부품: 게임 카드 그리드 ----------
+// 처음 화면과 '다음 게임' 화면이 이 부품 하나를 같이 씁니다(같은 모양 유지).
+const thumbCache = new Map();
+function gameGrid(onPick, { current = null } = {}) {
   const cards = GAMES.map((g) => {
     const canvas = h('canvas', { class: 'thumb', 'aria-hidden': 'true' });
     const best = bestOf(g);
-    const card = h('button', { type: 'button', class: 'card', onclick: () => gameMenu(g), 'aria-label': `${g.title}, ${g.control}${best ? `, 최고 ${best}${g.unit}` : ''}` },
+    const card = h('button', { type: 'button', class: 'card', onclick: () => onPick(g), 'aria-label': `${g.title}, ${g.control}${best ? `, 최고 ${best}${g.unit}` : ''}${g.id === current ? ', 방금 한 게임' : ''}` },
       canvas,
+      g.id === current ? h('span', { class: 'badge' }, '방금 한 게임') : null,
       h('span', { class: 'card-body' },
         h('span', { class: 'card-title' }, g.title),
         h('span', { class: 'card-meta' }, g.control, best ? ` · 최고 ${best}${g.unit}` : '')));
     return { card, canvas, g };
   });
+  const el = h('div', { class: 'grid' }, cards.map((c) => c.card));
+  requestAnimationFrame(() => cards.forEach((c) => {
+    if (!c.canvas.isConnected) return;
+    const key = `${c.g.id}:${c.canvas.clientWidth}`;
+    if (thumbCache.has(key)) {
+      const src = thumbCache.get(key);
+      const { W, H, dpr } = sizeCanvas(c.canvas);
+      c.canvas.getContext('2d').drawImage(src, 0, 0, W * dpr, H * dpr);
+    } else {
+      drawThumb(c.g, c.canvas);
+      const copy = document.createElement('canvas');
+      copy.width = c.canvas.width; copy.height = c.canvas.height;
+      copy.getContext('2d').drawImage(c.canvas, 0, 0);
+      thumbCache.set(key, copy);
+    }
+  }));
+  return el;
+}
+
+// ---------- 화면: 처음 ----------
+function home() {
   show(h('section', { class: 'screen home' },
     h('p', { class: 'kicker' }, '한판내기'),
     h('h1', {}, '둘이 한 판, 진 사람이 내기'),
     h('p', { class: 'lede' }, '1분이면 끝나는 게임 6개. 둘이 폰 하나로 번갈아 하거나, 도전장 링크를 보내세요.'),
-    h('div', { class: 'grid' }, cards.map((c) => c.card)),
-    h('footer', { class: 'foot' }, h('span', {}, '같은 판으로 공정하게 겨뤄요'), soundToggle())));
-  requestAnimationFrame(() => cards.forEach((c) => drawThumb(c.g, c.canvas)));
+    gameGrid(gameMenu),
+    h('footer', { class: 'foot' }, h('span', {}, '두 사람이 같은 판으로 겨뤄요'), soundToggle())));
 }
 
 // ---------- 화면: 게임 고르기 ----------
@@ -265,8 +314,11 @@ function handoff(match, turn) {
   const idx = match.order[turn];
   const name = match.names[idx];
   const prevIdx = match.order[0];
+  const art = h('canvas', { class: 'thumb hero', 'aria-hidden': 'true' });
+  requestAnimationFrame(() => { if (art.isConnected) drawThumb(g, art); });
   show(h('section', { class: 'screen handoff' },
     h('p', { class: 'kicker' }, `${g.title} · ${match.round}판 · ${turn + 1}번째 차례`),
+    art,
     h('h2', { class: 'big' }, `${name} 차례`),
     h('p', { class: 'lede' }, `폰을 ${name}에게 건네주세요.`),
     turn === 1 ? h('p', { class: 'note' }, `${match.names[prevIdx]} 기록 ${match.scores[prevIdx]}${g.unit}. 이보다 많으면 이겨요.`) : null,
@@ -319,10 +371,8 @@ function pickNext(match, lives) {
     topbar(() => duoResult(match), '결과로'),
     h('p', { class: 'kicker' }, `${match.names[0]} 대 ${match.names[1]} · ${match.bet}`),
     h('h2', {}, '다음 게임은?'),
-    h('div', { class: 'list' }, GAMES.map((g) => h('button', {
-      type: 'button', class: `list-item${g.id === match.game.id ? ' current' : ''}`,
-      onclick: () => startDuo({ ...match, counted: false, game: g, round: match.round + 1, lives, first: 1 - match.first }),
-    }, h('strong', {}, g.title), h('span', {}, g.control))))));
+    h('p', { class: 'lede' }, '같은 두 사람, 같은 내기로 이어서 해요. 전적도 이어서 셉니다.'),
+    gameGrid((g) => startDuo({ ...match, counted: false, game: g, round: match.round + 1, lives, first: 1 - match.first }), { current: match.game.id })));
 }
 
 // ---------- 화면: 링크 도전장 ----------
@@ -457,9 +507,17 @@ function practice(g) {
         h('div', { class: 'stack' },
           h('button', { type: 'button', class: 'btn primary', onclick: () => practice(g) }, '바로 다시'),
           h('button', { type: 'button', class: 'btn', onclick: () => linkSetup(g) }, '이 게임으로 도전장 보내기'),
-          h('button', { type: 'button', class: 'btn ghost', onclick: home }, '게임 목록'))));
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => pickSolo(g) }, '다른 게임 고르기'))));
     },
   });
+}
+
+function pickSolo(last) {
+  show(h('section', { class: 'screen' },
+    topbar(home),
+    h('p', { class: 'kicker' }, '혼자 연습'),
+    h('h2', {}, '다음 게임은?'),
+    gameGrid(gameMenu, { current: last.id })));
 }
 
 // ---------- 화면: 게임 ----------
@@ -474,7 +532,7 @@ function play(game, { seed, lives, target = null, label, onDone }) {
   const hintTitle = h('strong', {}, '화면을 누르면 시작');
   const hintRule = h('span', {}, game.rule);
   const hint = h('div', { class: 'hint' }, hintTitle, hintRule);
-  const quit = h('button', { type: 'button', class: 'hud-btn' }, '그만');
+  const quit = h('button', { type: 'button', class: 'hud-btn', 'aria-label': '그만하기' }, icon('close'));
   const stage = h('div', { class: 'stage' },
     canvas,
     h('div', { class: 'hud' },
@@ -626,13 +684,18 @@ function play(game, { seed, lives, target = null, label, onDone }) {
     ctx.restore();
     v.fx.drawOverlay(ctx, v.W, v.H, FONT);
     if (ended) {
-      ctx.fillStyle = 'rgba(243,238,228,0.55)';
+      ctx.fillStyle = 'rgba(20,18,26,0.28)';
       ctx.fillRect(0, 0, v.W, v.H);
-      ctx.fillStyle = '#1c1a17';
-      ctx.font = `800 40px ${FONT}`;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 12;
+      ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${s.score}${game.unit}`, v.W / 2, v.H * 0.45);
+      ctx.font = `200 72px ${FONT}`;
+      ctx.fillText(String(s.score), v.W / 2, v.H * 0.44);
+      ctx.font = `600 16px ${FONT}`;
+      ctx.fillText(`${game.title} 끝`, v.W / 2, v.H * 0.44 + 52);
+      ctx.restore();
     }
   }
   raf = requestAnimationFrame(frame);

@@ -1,7 +1,7 @@
 // 화살 꽂기: 탭하면 화살이 날아가 회전하는 과녁에 꽂혀요. 이미 꽂힌 화살에 닿으면 실패.
 // 정해진 개수를 다 꽂으면 과녁이 깨지고 다음 단계. 참고작: Knife Hit(Ketchapp, 구글플레이 1억+).
 import { rng, range } from '../core/rng.js';
-import { INK, MUTE, RED, paper, line, circle } from '../core/draw.js';
+import { ACCENT, WHITE, theme, background, circle, label } from '../core/draw.js';
 
 export const RULES = Object.freeze({ flight: 0.11, gap: 0.13, ease: 0.35, clearDelay: 0.7 });
 const TAU = Math.PI * 2;
@@ -108,48 +108,65 @@ function bot(s) {
   return st.stuck.every((b) => diff(rel, b.a) > RULES.gap * 1.4) ? { type: 'down', x: 0.5, y: 0.5 } : null;
 }
 
+
+const TH = theme(188);
+const WOOD = { face: '#f3c56f', ring: '#e6a94e', rim: '#c98a3c' };
+
+// 꼬리 (x, y)에서 ang 방향으로 len 길이. 촉은 앞, 깃은 꼬리(산호색).
 function drawArrow(ctx, x, y, ang, len, w) {
-  const tx = x + Math.cos(ang) * len;
-  const ty = y + Math.sin(ang) * len;
-  line(ctx, [[x, y], [tx, ty]], w, INK);
   const fx = Math.cos(ang); const fy = Math.sin(ang);
   const px = -fy; const py = fx;
-  ctx.fillStyle = RED;
+  const tx = x + fx * len; const ty = y + fy * len;
+  ctx.strokeStyle = TH.ink;
+  ctx.lineWidth = w;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x + fx * len * 0.1, y + fy * len * 0.1); ctx.lineTo(tx - fx * len * 0.1, ty - fy * len * 0.1); ctx.stroke();
+  ctx.fillStyle = TH.ink;
   ctx.beginPath();
-  ctx.moveTo(tx - fx * len * 0.02, ty - fy * len * 0.02);
-  ctx.lineTo(tx - fx * len * 0.22 + px * w * 2.2, ty - fy * len * 0.22 + py * w * 2.2);
-  ctx.lineTo(tx - fx * len * 0.16, ty - fy * len * 0.16);
-  ctx.lineTo(tx - fx * len * 0.22 - px * w * 2.2, ty - fy * len * 0.22 - py * w * 2.2);
-  ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(tx - fx * len * 0.16 + px * w * 1.6, ty - fy * len * 0.16 + py * w * 1.6);
+  ctx.lineTo(tx - fx * len * 0.16 - px * w * 1.6, ty - fy * len * 0.16 - py * w * 1.6);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = ACCENT;
+  for (const side of [1, -1]) {
+    ctx.beginPath();
+    ctx.moveTo(x + fx * len * 0.22, y + fy * len * 0.22);
+    ctx.lineTo(x + fx * len * 0.02 + px * w * 2.2 * side, y + fy * len * 0.02 + py * w * 2.2 * side);
+    ctx.lineTo(x + fx * len * 0.08, y + fy * len * 0.08);
+    ctx.closePath(); ctx.fill();
+  }
 }
 
 function draw(ctx, s, v) {
   const { W, H } = v;
-  paper(ctx, W, H, '#f2ede6');
+  background(ctx, W, H, TH);
   const st = s.st;
   const R = Math.min(W * 0.24, H * 0.15);
   const cx = W / 2;
-  const cy = H * 0.34;
-  const len = R * 1.25;
-  const aw = Math.max(2.5, R * 0.035);
+  const cy = H * 0.36;
+  const len = R * 1.2;
+  const aw = Math.max(3, R * 0.04);
   v.layout = { cx, cy, R, len };
   const breaking = s.clearT > 0;
   if (!breaking) {
     for (const b of st.stuck) {
       const a = b.a + st.angle;
-      drawArrow(ctx, cx + Math.cos(a) * (R + len), cy + Math.sin(a) * (R + len), a + Math.PI, len, aw);
+      drawArrow(ctx, cx + Math.cos(a) * (R + len * 0.92), cy + Math.sin(a) * (R + len * 0.92), a + Math.PI, len, aw);
     }
-    circle(ctx, cx, cy, R, { fill: '#e8d3a8', stroke: INK, width: 3 });
-    for (let i = 1; i <= 3; i++) circle(ctx, cx, cy, (R * i) / 4, { fill: i === 1 ? RED : null, stroke: 'rgba(28,26,23,0.35)', width: 2 });
-    ctx.strokeStyle = 'rgba(28,26,23,0.35)';
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+    circle(ctx, cx, cy, R, { fill: WOOD.rim });
+    ctx.restore();
+    circle(ctx, cx, cy, R * 0.9, { fill: WOOD.face });
+    for (const k of [0.72, 0.52, 0.32]) circle(ctx, cx, cy, R * k, { stroke: WOOD.ring, width: Math.max(2, R * 0.05) });
+    circle(ctx, cx, cy, R * 0.1, { fill: WOOD.ring });
+    ctx.strokeStyle = 'rgba(120,70,20,0.18)';
     ctx.lineWidth = 2;
     for (let i = 0; i < 3; i++) {
-      const a = st.angle + (i * TAU) / 3;
-      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * R * 0.3, cy + Math.sin(a) * R * 0.3); ctx.lineTo(cx + Math.cos(a) * R * 0.95, cy + Math.sin(a) * R * 0.95); ctx.stroke();
+      const a = st.angle + (i * Math.PI * 2) / 3;
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * R * 0.2, cy + Math.sin(a) * R * 0.2); ctx.lineTo(cx + Math.cos(a) * R * 0.85, cy + Math.sin(a) * R * 0.85); ctx.stroke();
     }
   }
-  // 날아가는 화살 / 대기 중인 화살
   const restY = H * 0.82;
   if (!s.over && !breaking) {
     const k = s.flying ? s.flying.t / RULES.flight : 0;
@@ -157,39 +174,31 @@ function draw(ctx, s, v) {
     drawArrow(ctx, cx, tipY + len, -Math.PI / 2, len, aw);
   }
   if (v.thumb) return;
-  // 남은 화살 표시
   const left = st.need - st.got;
   for (let i = 0; i < st.need; i++) {
-    const y = H * 0.9 - i * 16;
-    ctx.fillStyle = i < left ? INK : 'rgba(28,26,23,0.18)';
-    ctx.fillRect(24, y, 18, 4);
+    ctx.fillStyle = i < left ? WHITE : 'rgba(255,255,255,0.3)';
+    ctx.fillRect(22, H * 0.9 - i * 15, 18, 4);
   }
-  // 단계 점
-  ctx.textAlign = 'center';
-  ctx.fillStyle = MUTE;
-  ctx.font = '700 13px system-ui';
-  ctx.fillText(`${s.stage + 1}단계`, cx, cy + R + len + 34);
-  if (breaking) {
-    ctx.fillStyle = INK;
-    ctx.font = '800 26px system-ui';
-    ctx.fillText('과녁 격파!', cx, cy);
+  for (let i = 0; i < 5; i++) {
+    const on = i <= s.stage % 5;
+    circle(ctx, cx - 32 + i * 16, Math.max(H * 0.2, 150), 4, { fill: on ? WHITE : 'rgba(255,255,255,0.35)' });
   }
+  if (breaking) label(ctx, '과녁 격파', cx, cy, { size: 26, weight: 800 });
 }
 
 function onEvent(ev, s, v) {
   const L = v.layout;
   if (!L) return;
   if (ev.type === 'score') {
-    v.fx.burst(L.cx, L.cy + L.R, { n: 6, color: '#b58a4a', speed: 160, angle: Math.PI / 2, spread: Math.PI * 0.9, size: 2.5 });
+    v.fx.burst(L.cx, L.cy + L.R, { n: 6, color: WOOD.ring, speed: 160, angle: Math.PI / 2, spread: Math.PI * 0.9, size: 2.5 });
     v.fx.shake(2.5, 0.08);
   }
   if (ev.type === 'stage') {
-    v.fx.burst(L.cx, L.cy, { n: 26, color: '#c9a36a', speed: 380, size: 5, shape: 'square', gravity: 900 });
-    v.fx.ring(L.cx, L.cy, INK, L.R * 0.6, L.R * 1.8, 0.4);
+    v.fx.burst(L.cx, L.cy, { n: 28, color: WOOD.face, speed: 380, size: 5, shape: 'square', gravity: 900 });
+    v.fx.burst(L.cx, L.cy, { n: 12, speed: 300, size: 3, shape: 'square', gravity: 600 });
+    v.fx.ring(L.cx, L.cy, '#ffffff', L.R * 0.6, L.R * 1.8, 0.4);
   }
-  if (ev.type === 'fail') {
-    v.fx.chunk(L.cx - 2, L.cy + L.R + 6, 4, L.len, INK, (Math.random() - 0.5) * 300);
-  }
+  if (ev.type === 'fail') v.fx.chunk(L.cx - 2, L.cy + L.R + 6, 4, L.len, TH.ink, (Math.random() - 0.5) * 300);
 }
 
 export default {

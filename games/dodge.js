@@ -1,7 +1,7 @@
 // 똥 피하기: 화면 왼쪽·오른쪽을 누르고 있으면 그쪽으로 움직여요. 바닥에 떨어진 똥 하나가 1점.
 // 참고작: 똥피하기 계열(똥왕의 분노, 구글플레이 100만+). 떨어지는 순서와 속도는 시드로 정해져 두 사람이 같아요.
 import { rng, range, clamp } from '../core/rng.js';
-import { INK, MUTE, RED, paper, stickman } from '../core/draw.js';
+import { ACCENT, WHITE, theme, background, figure, shadow, label } from '../core/draw.js';
 
 export const RULES = Object.freeze({ width: 9, height: 16, speed: 8.5, accel: 60, radius: 0.42, body: 0.32, invuln: 1.3, near: 0.75 });
 const PLAYER_Y = RULES.height - 0.7;
@@ -96,67 +96,71 @@ function bot(s) {
   return [{ type: 'up', x: null }, { type: 'down', x: want < 0 ? 0.2 : 0.8, y: 0.8 }];
 }
 
+
+const TH = theme(42);
+
 function poop(ctx, x, y, r) {
-  ctx.fillStyle = '#7b5133';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = Math.max(1.5, r * 0.12);
-  const layers = [[0, 0.55, 1], [0, 0.05, 0.72], [0.05, -0.4, 0.45]];
-  for (const [ox, oy, k] of layers) {
+  const layers = [[0, 0.5, 1, '#7d5236'], [0, 0.02, 0.74, '#8d5f40'], [0.04, -0.42, 0.47, '#9c6b49']];
+  for (const [ox, oy, k, c] of layers) {
+    ctx.fillStyle = c;
     ctx.beginPath();
-    ctx.ellipse(x + ox * r, y + oy * r, r * k, r * k * 0.55, 0, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
+    ctx.ellipse(x + ox * r, y + oy * r, r * k, r * k * 0.56, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
+  ctx.fillStyle = '#9c6b49';
   ctx.beginPath();
-  ctx.moveTo(x + 0.05 * r, y - 0.7 * r);
-  ctx.quadraticCurveTo(x + 0.35 * r, y - 0.95 * r, x + 0.2 * r, y - 1.05 * r);
-  ctx.stroke();
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(x - 0.22 * r, y + 0.02 * r, r * 0.11, 0, 7); ctx.arc(x + 0.22 * r, y + 0.02 * r, r * 0.11, 0, 7); ctx.fill();
+  ctx.moveTo(x - 0.05 * r, y - 0.62 * r);
+  ctx.quadraticCurveTo(x + 0.3 * r, y - 1.02 * r, x + 0.18 * r, y - 1.1 * r);
+  ctx.quadraticCurveTo(x + 0.06 * r, y - 0.85 * r, x - 0.05 * r, y - 0.62 * r);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  ctx.beginPath(); ctx.ellipse(x - 0.35 * r, y + 0.35 * r, r * 0.22, r * 0.09, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = WHITE;
+  ctx.beginPath(); ctx.arc(x - 0.22 * r, y + 0.04 * r, r * 0.13, 0, 7); ctx.arc(x + 0.22 * r, y + 0.04 * r, r * 0.13, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2a1a10';
+  ctx.beginPath(); ctx.arc(x - 0.2 * r, y + 0.07 * r, r * 0.06, 0, 7); ctx.arc(x + 0.24 * r, y + 0.07 * r, r * 0.06, 0, 7); ctx.fill();
 }
 
 function draw(ctx, s, v) {
   const { W, H } = v;
-  paper(ctx, W, H, '#f1ece2');
+  background(ctx, W, H, TH);
   const u = Math.min(W / RULES.width, (H * 0.92) / RULES.height);
   const ox = (W - RULES.width * u) / 2;
   const oy = H * 0.92 - RULES.height * u;
   const X = (x) => ox + x * u;
   const Y = (y) => oy + y * u;
   v.layout = { X, Y, u };
-  ctx.fillStyle = '#e4dccb';
-  ctx.fillRect(0, Y(RULES.height), W, H);
-  ctx.strokeStyle = INK; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, Y(RULES.height)); ctx.lineTo(W, Y(RULES.height)); ctx.stroke();
-  // 좌우 조작 영역 표시
-  ctx.fillStyle = 'rgba(28,26,23,0.05)';
-  if (s.hold < 0) ctx.fillRect(0, 0, W / 2, H);
-  if (s.hold > 0) ctx.fillRect(W / 2, 0, W / 2, H);
+  const gy = Y(RULES.height);
+  ctx.fillStyle = TH.ground;
+  ctx.fillRect(0, gy, W, H - gy);
+  ctx.fillStyle = TH.groundDark;
+  ctx.fillRect(0, gy, W, 4);
   if (!v.thumb) {
-  ctx.fillStyle = MUTE;
-  ctx.font = '700 22px system-ui';
-  ctx.textAlign = 'center';
-  ctx.fillText('◀', W * 0.12, H - 18);
-  ctx.fillText('▶', W * 0.88, H - 18);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    if (s.hold < 0) ctx.fillRect(0, 0, W / 2, gy);
+    if (s.hold > 0) ctx.fillRect(W / 2, 0, W / 2, gy);
+    label(ctx, '◀', W * 0.1, (gy + H) / 2, { size: 20, alpha: s.hold < 0 ? 1 : 0.6 });
+    label(ctx, '▶', W * 0.9, (gy + H) / 2, { size: 20, alpha: s.hold > 0 ? 1 : 0.6 });
   }
   for (const d of s.drops) {
-    ctx.fillStyle = 'rgba(28,26,23,0.10)';
-    const k = clamp(d.y / RULES.height, 0, 1);
-    ctx.beginPath(); ctx.ellipse(X(d.x), Y(RULES.height) + 2, d.rad * u * k, d.rad * u * 0.2 * k, 0, 0, 7); ctx.fill();
+    const k = Math.min(1, Math.max(0, d.y / RULES.height));
+    shadow(ctx, X(d.x), gy + 2, d.rad * u * k, d.rad * u * 0.2 * k, 0.12);
     poop(ctx, X(d.x), Y(d.y), d.rad * u);
   }
   const blink = s.invuln > 0 && Math.floor(s.t * 14) % 2 === 0;
+  shadow(ctx, X(s.x), gy + 2, u * 0.32, u * 0.07);
   if (!blink) {
     const run = s.hold !== 0;
-    stickman(ctx, X(s.x), Y(RULES.height), u * 1.3, { pose: s.over ? 'fall' : run ? 'run' : 'stand', t: s.t, color: s.t - s.hitT < 0.4 || s.over ? RED : INK, facing: s.hold < 0 ? -1 : 1 });
+    figure(ctx, X(s.x), gy, u * 1.35, { pose: s.over ? 'fall' : run ? 'run' : 'stand', t: s.t, color: s.t - s.hitT < 0.4 || s.over ? ACCENT : TH.ink, facing: s.hold < 0 ? -1 : 1 });
   }
 }
 
 function onEvent(ev, s, v) {
   const L = v.layout;
   if (!L) return;
-  if (ev.type === 'score') v.fx.burst(L.X(ev.x), L.Y(RULES.height), { n: 5, color: '#7b5133', speed: 140, spread: Math.PI * 0.8, size: 2.5, gravity: 600 });
-  if (ev.type === 'near') v.fx.text(L.X(s.x), L.Y(PLAYER_Y) - 70, '아슬!', { color: INK, size: 20, life: 0.6 });
-  if (ev.type === 'fail') v.fx.burst(L.X(ev.x), L.Y(ev.y), { n: 16, color: '#7b5133', speed: 260, size: 3.5 });
+  if (ev.type === 'score') v.fx.burst(L.X(ev.x), L.Y(RULES.height), { n: 5, color: '#8d5f40', speed: 130, spread: Math.PI * 0.8, size: 2.5, gravity: 600 });
+  if (ev.type === 'near') v.fx.text(L.X(s.x), L.Y(PLAYER_Y) - 80, '아슬!', { size: 20, life: 0.6 });
+  if (ev.type === 'fail') v.fx.burst(L.X(ev.x), L.Y(ev.y), { n: 16, color: '#8d5f40', speed: 260, size: 3.5 });
 }
 
 export default {

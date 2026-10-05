@@ -1,7 +1,7 @@
 // 탑 쌓기: 좌우로 오가는 블록을 탭해서 내려놓기. 어긋난 만큼 잘리고, 완전히 빗나가면 끝.
 // 참고작: Stack(Ketchapp, 구글플레이 5,000만+). 완벽 연속이면 블록이 다시 커집니다.
 import { rng, range } from '../core/rng.js';
-import { INK, PAPER, paper, hsl, inkBlock } from '../core/draw.js';
+import { theme, background, hsl, slab } from '../core/draw.js';
 
 export const RULES = Object.freeze({ width: 10, base: 6, tol: 0.16, grow: 0.5, growFrom: 4, speed0: 6.5, speedPer: 0.12, speedMax: 14 });
 
@@ -91,11 +91,12 @@ function bot(s) {
   return Math.abs(movingLeft(s) - top.l) <= RULES.tol * 0.5 ? { type: 'down', x: 0.5, y: 0.5 } : null;
 }
 
-const colorOf = (s, i) => hsl(s.hue + i * 9, 46, 62);
+
+const colorOf = (s, i) => hsl(s.hue + i * 8, 62, 66);
 
 function draw(ctx, s, v) {
   const { W, H } = v;
-  paper(ctx, W, H, hsl(s.hue + s.layers.length * 9, 30, 93));
+  background(ctx, W, H, theme(s.hue + s.layers.length * 4));
   const u = W / (RULES.width + 2);
   const lh = Math.min(u * 0.8, H / 16);
   const target = Math.max(0, s.layers.length - 6);
@@ -104,29 +105,23 @@ function draw(ctx, s, v) {
   const X = (x) => u + x * u;
   const Y = (layer) => baseY - (layer - v.cam) * lh;
   v.layout = { X, Y, u, lh };
-  // 받침대
-  ctx.fillStyle = 'rgba(28,26,23,0.08)';
-  ctx.fillRect(X(RULES.width * 0.5 - RULES.base * 0.5) - 6, Y(0) + lh, RULES.base * u + 12, H);
+  // 받침 기둥(바닥까지)
+  const b0 = s.layers[0];
+  ctx.fillStyle = hsl(s.hue - 6, 38, 52);
+  ctx.fillRect(X(b0.l), Y(0) + lh, (b0.r - b0.l) * u, H);
+  ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  ctx.fillRect(X(b0.l) + (b0.r - b0.l) * u * 0.62, Y(0) + lh, (b0.r - b0.l) * u * 0.38, H);
   const first = Math.max(0, Math.floor(v.cam) - 2);
   for (let i = first; i < s.layers.length; i++) {
     const L = s.layers[i];
     const y = Y(i);
     if (y > H + lh) continue;
-    inkBlock(ctx, X(L.l), y, (L.r - L.l) * u, lh, colorOf(s, i));
+    slab(ctx, X(L.l), y, (L.r - L.l) * u, lh, colorOf(s, i), { radius: 2 });
   }
   if (s.moving && !s.over) {
     const l = movingLeft(s);
     const i = s.layers.length;
-    inkBlock(ctx, X(l), Y(i), s.moving.w * u, lh, colorOf(s, i));
-    // 아래 블록 경계 안내선(옅게)
-    const top = s.layers[i - 1];
-    ctx.strokeStyle = 'rgba(28,26,23,0.18)';
-    ctx.setLineDash([4, 5]);
-    ctx.beginPath();
-    ctx.moveTo(X(top.l), Y(i) - 4); ctx.lineTo(X(top.l), Y(i) + lh);
-    ctx.moveTo(X(top.r), Y(i) - 4); ctx.lineTo(X(top.r), Y(i) + lh);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    slab(ctx, X(l), Y(i), s.moving.w * u, lh, colorOf(s, i), { radius: 2 });
   }
 }
 
@@ -135,10 +130,11 @@ function onEvent(ev, s, v) {
   if (!L) return;
   if (ev.type === 'score') {
     const y = L.Y(ev.y);
+    const cx = L.X((ev.l + ev.r) / 2);
     if (ev.perfect) {
-      v.fx.ring(L.X((ev.l + ev.r) / 2), y + L.lh / 2, PAPER, 10, (ev.r - ev.l) * L.u * 0.75, 0.4);
-      v.fx.burst(L.X((ev.l + ev.r) / 2), y, { n: 8 + Math.min(ev.combo, 8) * 2, color: '#ffffff', speed: 200, size: 2.5, gravity: 200 });
-      if (ev.combo >= 2) v.fx.text(L.X((ev.l + ev.r) / 2), y - 30, ev.grew ? `완벽 ×${ev.combo} 커짐!` : `완벽 ×${ev.combo}`, { color: INK, size: 22 });
+      v.fx.ring(cx, y + L.lh / 2, '#ffffff', 10, (ev.r - ev.l) * L.u * 0.75, 0.4);
+      v.fx.burst(cx, y, { n: 8 + Math.min(ev.combo, 8) * 2, speed: 200, size: 2.5, gravity: 120, shape: 'square' });
+      if (ev.combo >= 2) v.fx.text(cx, y - 34, ev.grew ? `완벽 ×${ev.combo}  커짐` : `완벽 ×${ev.combo}`, { size: 22 });
     } else if (ev.cut) {
       v.fx.chunk(L.X(ev.cut.l), y, (ev.cut.r - ev.cut.l) * L.u, L.lh, colorOf(s, ev.y), ev.cut.l < ev.l ? -60 : 60);
     }

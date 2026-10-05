@@ -1,7 +1,7 @@
 // 다리 놓기: 꾹 누르면 막대가 자라고, 떼면 넘어져 다리가 됩니다. 다음 기둥에 닿으면 건너요.
 // 참고작: Stick Hero(Ketchapp, 구글플레이 1,000만+). 기둥 가운데 빨간 점에 맞추면 2점.
 import { rng, range } from '../core/rng.js';
-import { INK, MUTE, RED, paper, line, stickman } from '../core/draw.js';
+import { ACCENT, theme, background, figure, label } from '../core/draw.js';
 
 export const RULES = Object.freeze({ grow: 5.2, maxLen: 11, rotate: 0.28, walk: 5.5, perfect: 0.16, fall: 0.6, scroll: 0.35 });
 
@@ -112,9 +112,11 @@ function bot(s) {
   return null;
 }
 
+const TH = theme(22);
+
 function draw(ctx, s, v) {
   const { W, H } = v;
-  paper(ctx, W, H);
+  background(ctx, W, H, TH);
   const u = W / 6.5;
   const camTarget = curP(s).x + curP(s).w - 1.3;
   v.cam = v.cam == null ? camTarget : v.cam + (camTarget - v.cam) * Math.min(1, v.dt * 9);
@@ -122,43 +124,45 @@ function draw(ctx, s, v) {
   const X = (x) => (x - v.cam) * u;
   const Y = (y) => gy - y * u;
   v.layout = { X, Y, u };
-  // 먼 언덕(느리게 따라오는 배경)
-  ctx.fillStyle = 'rgba(28,26,23,0.06)';
-  const span = W * 0.9;
-  const shift = ((v.cam * u * 0.25) % span + span) % span;
-  for (let i = -1; i < 3; i++) {
-    const cx = i * span - shift + span * 0.5;
-    ctx.beginPath();
-    ctx.ellipse(cx, gy, span * 0.55, H * 0.16, 0, Math.PI, 0);
-    ctx.fill();
-  }
+  // 먼 언덕 두 겹(느리게 따라옴)
+  const hills = (color, k, rx, ry, off) => {
+    ctx.fillStyle = color;
+    const span = W * 0.95;
+    const shift = ((v.cam * u * k + off) % span + span) % span;
+    for (let i = -1; i < 3; i++) {
+      ctx.beginPath();
+      ctx.ellipse(i * span - shift + span * 0.5, gy + 4, span * rx, H * ry, 0, Math.PI, 0);
+      ctx.fill();
+    }
+  };
+  hills(TH.far, 0.15, 0.6, 0.2, 0);
+  hills(TH.ground, 0.3, 0.45, 0.12, W * 0.4);
   for (let i = Math.max(0, s.cur - 1); i < s.pillars.length; i++) {
     const p = s.pillars[i];
     const x = X(p.x);
     if (x > W || x + p.w * u < 0) continue;
-    ctx.fillStyle = INK;
+    ctx.fillStyle = TH.ink;
     ctx.fillRect(x, gy, p.w * u, H - gy);
-    if (i > s.cur || (i === s.cur + 1)) {
-      ctx.fillStyle = RED;
-      ctx.fillRect(X(p.x + p.w / 2 - RULES.perfect), gy, RULES.perfect * 2 * u, Math.max(4, u * 0.08));
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(x, gy, p.w * u * 0.3, H - gy);
+    if (i > s.cur) {
+      ctx.fillStyle = ACCENT;
+      ctx.fillRect(X(p.x + p.w / 2 - RULES.perfect), gy, RULES.perfect * 2 * u, Math.max(5, u * 0.09));
     }
   }
-  // 막대
   if (s.phase !== 'ready' || s.len > 0) {
     const bx = X(base(s));
     const a = (-Math.PI / 2) * (1 - (s.phase === 'grow' ? 0 : s.angle));
     const fallA = s.phase === 'fall' ? Math.min(Math.PI / 2, s.timer * 5) : 0;
     const ang = a + fallA;
-    line(ctx, [[bx, gy], [bx + Math.cos(ang) * s.len * u, gy + Math.sin(ang) * s.len * u]], Math.max(3, u * 0.07), '#8a5a2b');
+    ctx.strokeStyle = TH.ink;
+    ctx.lineWidth = Math.max(4, u * 0.075);
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(bx, gy); ctx.lineTo(bx + Math.cos(ang) * s.len * u, gy + Math.sin(ang) * s.len * u); ctx.stroke();
   }
   const pose = s.phase === 'walk' ? 'run' : s.phase === 'fall' ? 'fall' : 'stand';
-  stickman(ctx, X(s.heroX), Y(s.heroY), u * 0.85, { pose, t: s.t, color: s.phase === 'fall' ? RED : INK });
-  if (s.phase === 'grow' && !v.thumb) {
-    ctx.fillStyle = MUTE;
-    ctx.font = `700 13px system-ui`;
-    ctx.textAlign = 'center';
-    ctx.fillText('떼면 넘어져요', X(base(s)), gy + 22);
-  }
+  figure(ctx, X(s.heroX), Y(s.heroY), u * 0.9, { pose, t: s.t, color: s.phase === 'fall' ? ACCENT : TH.ink });
+  if (s.phase === 'grow' && !v.thumb) label(ctx, '손을 떼면 넘어가요', W / 2, H * 0.82, { size: 15, weight: 600, alpha: 0.9 });
 }
 
 function onEvent(ev, s, v) {
@@ -168,10 +172,10 @@ function onEvent(ev, s, v) {
     const x = L.X(ev.x);
     const y = L.Y(0);
     if (ev.perfect) {
-      v.fx.ring(x, y, RED, 6, 50, 0.35);
-      v.fx.text(x, y - 60, ev.combo >= 2 ? `완벽 +2 ×${ev.combo}` : '완벽 +2', { color: RED, size: 22 });
+      v.fx.ring(x, y, '#ffffff', 6, 54, 0.35);
+      v.fx.text(x, y - 70, ev.combo >= 2 ? `완벽 +2 ×${ev.combo}` : '완벽 +2', { size: 22 });
     }
-    v.fx.burst(x, y, { n: 6, color: MUTE, speed: 120, spread: Math.PI, size: 2.5 });
+    v.fx.burst(x, y, { n: 8, speed: 130, spread: Math.PI, size: 2.5, shape: 'square' });
   }
 }
 

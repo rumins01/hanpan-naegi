@@ -1,7 +1,7 @@
 // 계단 오르기: 오른쪽은 '오르기', 왼쪽은 '방향 바꾸기'. 계단이 꺾이는 곳에서 방향을 바꿔야 해요.
 // 시간 막대가 계속 줄고, 한 칸 오를 때마다 조금 찹니다. 참고작: 무한의 계단(구글플레이 1,000만+).
 import { rng } from '../core/rng.js';
-import { INK, MUTE, RED, PAPER, paper, stickman, roundRect, FONT } from '../core/draw.js';
+import { ACCENT, WHITE, theme, background, figure, roundRect, slab, label, FONT } from '../core/draw.js';
 
 export const RULES = Object.freeze({ gain: 0.1, drain0: 0.12, drainPer: 0.006, drainMax: 0.78, refill: 0.6 });
 
@@ -75,13 +75,14 @@ function bot(s) {
   return { type: 'down', x: s.dirs[s.n] === s.facing ? 0.75 : 0.25, y: 0.9 };
 }
 
+const TH = theme(150);
+
 function draw(ctx, s, v) {
   const { W, H } = v;
-  paper(ctx, W, H, '#eef0e6');
+  background(ctx, W, H, TH);
   const u = Math.min(W / 7, H / 12);
   const sw = u * 1.05;
   const sh = u * 0.55;
-  // 플레이어 위치(칸 좌표)
   let col = 0;
   const cols = [0];
   for (let i = 0; i < s.n + 16 && i < s.dirs.length; i++) { col += s.dirs[i]; cols.push(col); }
@@ -93,60 +94,56 @@ function draw(ctx, s, v) {
   const X = (c) => W / 2 + (c - v.camX) * sw;
   const Y = (r) => H * 0.6 - (r - v.camY) * sh;
   v.layout = { X, Y, u, pc, pr };
-  for (let i = Math.max(0, s.n - 8); i < Math.min(cols.length, s.n + 14); i++) {
+  for (let i = Math.min(cols.length, s.n + 14) - 1; i >= Math.max(0, s.n - 8); i--) {
     const x = X(cols[i]) - sw / 2;
     const y = Y(i);
-    ctx.fillStyle = i < s.n ? '#c9c3b4' : i === s.n ? '#5f8f5a' : '#7aa874';
-    ctx.fillRect(x, y, sw, sh * 0.62);
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, sw, sh * 0.62);
+    ctx.globalAlpha = i < s.n ? 0.45 : 1;
+    slab(ctx, x + 1, y, sw - 2, sh * 0.7, i === s.n ? ACCENT : 'hsl(150 40% 97%)', { radius: 3, face: 0.45 });
+    ctx.globalAlpha = 1;
   }
   const hurt = s.hitT >= 0 && s.t - s.hitT < 0.4;
-  stickman(ctx, X(pc), Y(pr), u * 1.05, { pose: s.over ? 'fall' : s.t - s.moveT < 0.1 ? 'climb' : 'stand', t: s.t, color: hurt || s.over ? RED : INK, facing: s.facing });
+  figure(ctx, X(pc), Y(pr), u * 1.1, { pose: s.over ? 'fall' : s.t - s.moveT < 0.1 ? 'climb' : 'stand', t: s.t, color: hurt || s.over ? ACCENT : TH.ink, facing: s.facing });
   if (v.thumb) return;
   // 시간 막대
-  const bw = Math.min(W * 0.6, 260);
+  const bw = Math.min(W * 0.56, 240);
   const bx = (W - bw) / 2;
   const by = Math.max(H * 0.24, 158); // 위쪽 점수 숫자와 겹치지 않게
-  ctx.fillStyle = PAPER;
-  roundRect(ctx, bx, by, bw, 12, 6); ctx.fill();
-  ctx.fillStyle = s.time < 0.25 ? RED : INK;
-  roundRect(ctx, bx, by, Math.max(0, bw * s.time), 12, 6); ctx.fill();
-  ctx.strokeStyle = INK; ctx.lineWidth = 2;
-  roundRect(ctx, bx, by, bw, 12, 6); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  roundRect(ctx, bx, by, bw, 10, 5); ctx.fill();
+  ctx.fillStyle = s.time < 0.25 ? ACCENT : WHITE;
+  roundRect(ctx, bx, by, Math.max(0, bw * s.time), 10, 5); ctx.fill();
   // 버튼 두 개
-  const bh = Math.min(96, H * 0.14);
-  const top = H - bh - Math.max(16, H * 0.03);
-  const pad = 14;
+  const bh = Math.min(92, H * 0.13);
+  const top = H - bh - Math.max(18, H * 0.035);
+  const pad = 16;
   const half = (W - pad * 3) / 2;
-  const btn = (x, label, sub, hot) => {
-    ctx.fillStyle = hot ? INK : PAPER;
-    roundRect(ctx, x, top, half, bh, 8); ctx.fill();
-    ctx.strokeStyle = INK; ctx.lineWidth = 2.5;
-    roundRect(ctx, x, top, half, bh, 8); ctx.stroke();
-    ctx.fillStyle = hot ? PAPER : INK;
+  const btn = (x, title, sub, hot) => {
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.12)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = hot ? TH.ink : 'rgba(255,255,255,0.92)';
+    roundRect(ctx, x, top, half, bh, 18); ctx.fill();
+    ctx.restore();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 20px ${FONT}`;
-    ctx.fillText(label, x + half / 2, top + bh / 2 - 8);
-    ctx.font = `600 13px ${FONT}`;
-    ctx.fillStyle = hot ? PAPER : MUTE;
-    ctx.fillText(sub, x + half / 2, top + bh / 2 + 16);
+    ctx.font = `700 19px ${FONT}`;
+    ctx.fillStyle = hot ? WHITE : TH.ink;
+    ctx.fillText(title, x + half / 2, top + bh / 2 - 9);
+    ctx.font = `500 12px ${FONT}`;
+    ctx.fillStyle = hot ? 'rgba(255,255,255,0.7)' : TH.mid;
+    ctx.fillText(sub, x + half / 2, top + bh / 2 + 14);
   };
-  const lastTurn = v.lastInputX != null && s.t - (v.lastInputT ?? -9) < 0.08;
-  btn(pad, '방향 바꾸기', '왼쪽 누르기', lastTurn && v.lastInputX < 0.5);
-  btn(pad * 2 + half, '오르기', '오른쪽 누르기', lastTurn && v.lastInputX >= 0.5);
+  const recent = v.lastInputX != null && s.t - (v.lastInputT ?? -9) < 0.08;
+  btn(pad, '방향 바꾸기', '왼쪽', recent && v.lastInputX < 0.5);
+  btn(pad * 2 + half, '오르기', '오른쪽', recent && v.lastInputX >= 0.5);
 }
 
 function onEvent(ev, s, v) {
   const L = v.layout;
   if (!L) return;
-  if (ev.type === 'score' && s.score % 25 === 0) v.fx.text(L.X(L.pc), L.Y(L.pr) - 70, `${s.score}칸!`, { color: '#3e6b3a', size: 24 });
-  if (ev.type === 'score') v.fx.burst(L.X(L.pc), L.Y(L.pr), { n: 3, color: MUTE, speed: 80, size: 2, spread: Math.PI, gravity: 300 });
-  if (ev.type === 'fail' && ev.timeout) v.fx.text(W2(v), L.Y(L.pr) - 70, '시간 초과', { color: RED, size: 22 });
+  if (ev.type === 'score' && s.score % 25 === 0) v.fx.text(L.X(L.pc), L.Y(L.pr) - 80, `${s.score}칸`, { size: 24 });
+  if (ev.type === 'score') v.fx.burst(L.X(L.pc), L.Y(L.pr), { n: 4, speed: 90, size: 2, spread: Math.PI, gravity: 300, shape: 'square' });
+  if (ev.type === 'fail' && ev.timeout) v.fx.text(v.W / 2, L.Y(L.pr) - 80, '시간 초과', { color: ACCENT, size: 22 });
 }
-const W2 = (v) => v.W / 2;
 
 export default {
   id: 'stairs',

@@ -1,7 +1,7 @@
 // 줄넘기: 줄이 발밑을 지날 때 공중에 있으면 1개. 참고작: 침착한 줄넘기(방치된 인기작).
 // v1 도전장과 같은 판이 나오도록 줄 속도 생성 방식은 바꾸지 않습니다.
 import { rng } from '../core/rng.js';
-import { INK, MUTE, RED, RULE, paper, line, stickman } from '../core/draw.js';
+import { ACCENT, theme, background, figure, shadow } from '../core/draw.js';
 
 export const PHYS = Object.freeze({ airtime: 0.40, peak: 1.0, clear: 0.18, perfect: 0.72, buffer: 0.09 });
 const G = (8 * PHYS.peak) / PHYS.airtime ** 2;
@@ -94,19 +94,23 @@ function bot(s) {
 }
 
 const ROPE = { handX: 1.4, handY: 0.95, radius: 1.0 };
+const TH = theme(205);
 
 function draw(ctx, s, v) {
   const { W, H } = v;
-  paper(ctx, W, H);
+  background(ctx, W, H, TH);
   const u = Math.min(W / 4.2, H / 3.6);
   const gy = H * 0.7;
   const X = (x) => W / 2 + x * u;
   const Y = (y) => gy - y * u;
   v.layout = { X, Y, u };
-  ctx.strokeStyle = RULE;
-  ctx.lineWidth = 1;
-  for (let x = -20; x < W + 20; x += 14) { ctx.beginPath(); ctx.moveTo(x, gy + 3); ctx.lineTo(x - 9, gy + 13); ctx.stroke(); }
-  line(ctx, [[0, gy], [W, gy]], 2, INK);
+  ctx.fillStyle = TH.far;
+  ctx.beginPath(); ctx.ellipse(W * 0.15, gy, W * 0.55, H * 0.13, 0, Math.PI, 0); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(W * 0.95, gy, W * 0.5, H * 0.09, 0, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = TH.ground;
+  ctx.fillRect(0, gy, W, H - gy);
+  ctx.fillStyle = TH.groundDark;
+  ctx.fillRect(0, gy, W, 4);
 
   const a = 2 * Math.PI * s.phase;
   const mid = ROPE.handY - ROPE.radius * Math.cos(a);
@@ -116,13 +120,16 @@ function draw(ctx, s, v) {
   const R = hand(1);
   const holder = (side, hd) => {
     const x = side * 1.78;
-    stickman(ctx, X(x), Y(0), u * 1.25, { pose: 'stand', color: MUTE, facing: -side });
-    line(ctx, [[X(x), Y(0.95)], [X(hd.x), Y(hd.y)]], Math.max(2, u * 0.05), MUTE);
+    shadow(ctx, X(x), gy + 2, u * 0.26, u * 0.05, 0.1);
+    figure(ctx, X(x), Y(0), u * 1.3, { pose: 'stand', color: TH.mid, facing: -side, band: TH.mid, t: s.t });
+    ctx.strokeStyle = TH.mid; ctx.lineWidth = u * 0.1; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(X(x), Y(0.86)); ctx.lineTo(X(hd.x), Y(hd.y)); ctx.stroke();
   };
   const rope = (isFront) => {
-    ctx.globalAlpha = isFront ? 1 : 0.45;
-    ctx.strokeStyle = RED;
-    ctx.lineWidth = u * (isFront ? 0.05 : 0.03);
+    ctx.globalAlpha = isFront ? 1 : 0.4;
+    ctx.strokeStyle = ACCENT;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = u * (isFront ? 0.055 : 0.035);
     ctx.beginPath();
     ctx.moveTo(X(L.x), Y(L.y));
     ctx.quadraticCurveTo(X(0), Y(2 * mid - (L.y + R.y) / 2), X(R.x), Y(R.y));
@@ -132,16 +139,14 @@ function draw(ctx, s, v) {
   holder(-1, L);
   holder(1, R);
   if (!front) rope(false);
-  // 그림자
-  ctx.fillStyle = 'rgba(28,26,23,0.12)';
-  const sw = 0.32 * (1 - Math.min(s.y, 1) * 0.45);
-  ctx.beginPath(); ctx.ellipse(X(0), gy + 2, sw * u, sw * u * 0.18, 0, 0, Math.PI * 2); ctx.fill();
+  const sw = 0.3 * (1 - Math.min(s.y, 1) * 0.45);
+  shadow(ctx, X(0), gy + 2, sw * u, sw * u * 0.2);
   const sinceLand = s.t - s.landT;
   const squash = s.airborne ? 1 + Math.min(0.12, Math.abs(s.vy) * 0.012) : sinceLand < 0.1 ? 0.85 + sinceLand * 1.5 : 1;
   const hurt = s.hitT >= 0 && s.t - s.hitT < 0.45;
   ctx.save();
   if (hurt) { ctx.translate(X(0), Y(s.y)); ctx.rotate(Math.sin((s.t - s.hitT) * 40) * 0.25); ctx.translate(-X(0), -Y(s.y)); }
-  stickman(ctx, X(0), Y(s.y), u * 1.38, { pose: hurt ? 'fall' : s.airborne ? 'jump' : 'stand', color: hurt ? RED : INK, squash });
+  figure(ctx, X(0), Y(s.y), u * 1.4, { pose: hurt ? 'fall' : s.airborne ? 'jump' : 'stand', color: hurt ? ACCENT : TH.ink, squash, t: s.t });
   ctx.restore();
   if (front) rope(true);
 }
@@ -150,10 +155,10 @@ function onEvent(ev, s, v) {
   const L = v.layout;
   if (!L) return;
   if (ev.type === 'score') {
-    v.fx.burst(L.X(0), L.Y(0), { n: ev.perfect ? 10 : 5, color: ev.perfect ? RED : MUTE, speed: 160, spread: Math.PI, angle: -Math.PI / 2, size: 2.5, gravity: 500 });
-    if (ev.perfect && ev.combo >= 2) v.fx.text(L.X(0), L.Y(2.1), `완벽 ×${ev.combo}`, { color: RED, size: 22 });
+    v.fx.burst(L.X(0), L.Y(0), { n: ev.perfect ? 10 : 5, speed: 150, spread: Math.PI, angle: -Math.PI / 2, size: 2.5, gravity: 500, shape: 'square' });
+    if (ev.perfect && ev.combo >= 2) v.fx.text(L.X(0), L.Y(2.15), `완벽 ×${ev.combo}`, { size: 22 });
   }
-  if (ev.type === 'fail') v.fx.burst(L.X(0), L.Y(0.3), { n: 14, color: RED, speed: 260, size: 3 });
+  if (ev.type === 'fail') v.fx.burst(L.X(0), L.Y(0.3), { n: 14, color: ACCENT, speed: 260, size: 3 });
 }
 
 export default {
@@ -162,7 +167,7 @@ export default {
   rule: '줄이 발밑에 올 때 탭해서 점프. 줄 속도가 갑자기 바뀌어요.',
   control: '탭',
   ref: '침착한 줄넘기',
-  accent: RED,
+  accent: ACCENT,
   focus: 0.6,
   unit: '개',
   create, input, step, draw, onEvent, bot,

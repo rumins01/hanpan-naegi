@@ -19,7 +19,7 @@ export class Fx {
     this.calm = reduceMotion();
   }
 
-  burst(x, y, { n = 10, color = '#1c1a17', speed = 220, life = 0.6, size = 3.5, gravity = 700, angle = -Math.PI / 2, spread = Math.PI * 2, shape = 'dot' } = {}) {
+  burst(x, y, { n = 10, color = '#ffffff', speed = 220, life = 0.6, size = 3.5, gravity = 700, angle = -Math.PI / 2, spread = Math.PI * 2, shape = 'dot' } = {}) {
     for (let i = 0; i < n; i++) {
       const a = angle + (Math.random() - 0.5) * spread;
       const v = speed * (0.4 + Math.random() * 0.8);
@@ -36,7 +36,7 @@ export class Fx {
     this.rings.push({ x, y, color, r0, r1, life, max: life });
   }
 
-  text(x, y, str, { color = '#1c1a17', size = 24, life = 0.8, rise = 50 } = {}) {
+  text(x, y, str, { color = '#ffffff', size = 24, life = 0.8, rise = 50 } = {}) {
     this.texts.push({ x, y, str, color, size, life, max: life, rise });
   }
 
@@ -116,14 +116,16 @@ export class Fx {
       ctx.font = `800 ${s}px ${font}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = 'rgba(243,238,228,0.9)';
-      ctx.strokeText(t.str, t.x, t.y - t.rise * k);
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.22)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 2;
       ctx.fillStyle = t.color;
       ctx.fillText(t.str, t.x, t.y - t.rise * k);
+      ctx.restore();
     }
     if (this.flashT > 0) {
-      ctx.globalAlpha = (this.flashT / this.flashMax) * 0.35;
+      ctx.globalAlpha = (this.flashT / this.flashMax) * 0.28;
       ctx.fillStyle = this.flashColor;
       ctx.fillRect(0, 0, W, H);
     }
